@@ -1,8 +1,12 @@
+"""
+Convert videos to jpgs
+"""
 import glob
 import os
 import cv2
 from pathlib import Path
 from tqdm import tqdm
+import shutil
 
 from config.defaults import get_cfg
 
@@ -29,12 +33,19 @@ def video2images(video: Path, img_folder: Path):
 
 if __name__ == '__main__':
     cfg = get_cfg()
-    # video_root_path = "/home/zc/Datasets/[手势识别]ChaLearn/ChaLearn Isolated Gesture Recognition"
-    img_root_path = "/home/zc/Datasets/ChaLearnIsoImages"
-    avi_list = glob.glob(str(Path(img_root_path, '**', '*.avi')), recursive=True)
+    override = Path('..', 'cfg_override.yaml')
+    if(override.is_file()):
+        cfg.merge_from_file(override)
+    
+    if Path(cfg.CHALEARN.IMG_ROOT).is_dir():
+        raise Exception(f'{cfg.CHALEARN.IMG_ROOT} already exists')
+    
+    shutil.copytree(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG_ROOT)
+
+    avi_list = glob.glob(str(Path(cfg.CHALEARN.IMG_ROOT, '**', '*.avi')), recursive=True)
     for video in tqdm(avi_list):
         video = Path(video)
-        video2images(video, video.parent / video.stem)
+        video2images(video, video.parent / video.stem)  # 001/K_00001
 
     for video in avi_list:
         os.remove(video)

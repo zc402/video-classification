@@ -1,3 +1,6 @@
+"""
+Convert videos to constant frame rate videos
+"""
 import os
 import glob
 from pathlib import Path
