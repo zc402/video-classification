@@ -32,7 +32,7 @@ def sample_a_set(label_path:Path, video_folder:Path, new_root, allow_class):
         f.writelines(label_str)
 
     # copy videos to sample folder
-    for label in labels:
+    for label in tqdm(labels):
         m,k,l = label
         m_video = Path(video_folder, m)
         k_video = Path(video_folder, k)

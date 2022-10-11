@@ -8,6 +8,9 @@ import cv2
 import glob 
 from utils.chalearn import train_list, test_list
 
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt 
+
 cfg = get_override_cfg()
 
 densepose = Path(cfg.DENSEPOSE)
@@ -20,6 +23,8 @@ def load_iuv(pkl_path):
 
 
 def crop(img_path, target_path, bbox):
+    if Path(target_path).exists():
+        return  # Do not overwrite
     if bbox is None:
         black = np.zeros((10, 10, 3), dtype=np.uint8)
         cv2.imwrite(str(target_path), black)
@@ -28,6 +33,39 @@ def crop(img_path, target_path, bbox):
     img = cv2.imread(str(img_path))  # H W C
     cropped = img[y1:y2, x1:x2, :]
     cv2.imwrite(str(target_path), cropped)
+
+def crop_body_parts(human_img_path, target_relative_path, iuv):
+    """
+    human_img_path: path of cropped human image
+    """
+    if Path(target_path).exists():
+        return  # Do not overwrite
+    lhand = 4
+    rhand = 3
+    I = iuv['pred_densepose'][0].labels  # pixel region segmentation results
+
+    target_path = Path(cfg.CHALEARN.ROOT, 'CropLHand', target_relative_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    mask_lhand = (I == lhand)
+    mask_lhand = mask_lhand.cpu().numpy().astype(np.uint8)
+    contours, _ = cv2.findContours(mask_lhand,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+    if len(contours)==0:
+        return
+    elif len(contours)==1:
+        img = cv2.imread(str(human_img_path))
+        x, y, w, h = cv2.boundingRect(contours[0])
+        cropped = img[y:y+h, x:x+w, :]
+        show = False
+        if show:
+            fig, ax = plt.subplots(1)
+            ax.imshow(img)
+            rect = patches.Rectangle((x, y), w, h, linewidth=1,
+                            edgecolor='r', facecolor="none")
+            ax.add_patch(rect)
+            plt.show()
+        cv2.imwrite(str(target_path), cropped)
+        pass
+    
 
 def extract_crop(name_of_set):
     pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
@@ -38,9 +76,9 @@ def extract_crop(name_of_set):
     for iuv in tqdm(iuv_list):
         iuv_res = load_iuv(iuv)
         
-        for item in iuv_res:  # images
+        for iuv_item in iuv_res:  # images
             # Path: ./train/001/M_00068/00000.jpg
-            file_path = item['file_name']
+            file_path = iuv_item['file_name']
             file_path = Path(file_path)
             x_img = file_path.name  # 00000.jpg
             x5 = file_path.parent.name  # M_00068
@@ -50,13 +88,14 @@ def extract_crop(name_of_set):
             crop_img_path = Path(crop_body_root, name_of_set, x3x5img)
             crop_img_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if item['pred_boxes_XYXY'].size()[0] == 0:
-                # Not detected
+            if iuv_item['pred_boxes_XYXY'].size()[0] == 0:
+                # No detection
                 crop(pad_img_path, crop_img_path, None)
                 print(f"No box detection: {pad_img_path}")
             else:
-                bbox = item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
+                bbox = iuv_item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
                 crop(pad_img_path, crop_img_path, bbox)
+                crop_body_parts(crop_img_path, x3x5img, iuv_item)
         
 
     # for (m,k,l) in tqdm(label_list):
