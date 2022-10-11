@@ -40,16 +40,21 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
     human_img_path: path of cropped human image
     """
 
-    I = iuv['pred_densepose'][0].labels  # pixel region segmentation results
+    I = iuv['pred_densepose'][0].labels.cpu().numpy()  # pixel region segmentation results
 
-    def _crop_part(part_idx, save_name):
+    def _crop_part(part_indices, save_name):
 
         target_path = Path(cfg.CHALEARN.ROOT, save_name, target_relative_path)
         if Path(target_path).exists():
             return  # Do not overwrite
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        mask = (I == part_idx)
-        mask = mask.cpu().numpy().astype(np.uint8)
+        # mask = (I == part_indices)
+        mask = np.zeros_like(I)
+        for pid in part_indices:
+            part_mask = (I == pid)
+            mask = np.logical_or(mask, part_mask)
+
+        mask = mask.astype(np.uint8)
         contours, _ = cv2.findContours(mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         if len(contours)==0:
             return         
@@ -83,10 +88,13 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
             
         cv2.imwrite(str(target_path), cropped)
     
-    lhand = 4
-    rhand = 3
+    lhand = [4]
+    rhand = [3]
+    larm = [21, 19, 17, 15]
+
     _crop_part(lhand, 'CropLHand')
     _crop_part(rhand, 'CropRHand')
+    _crop_part(larm, 'CropLArm')
 
 
 def extract_crop(name_of_set):
