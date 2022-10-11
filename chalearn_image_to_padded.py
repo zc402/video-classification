@@ -62,15 +62,10 @@ def pad_an_img(img_path:Path, target_path:Path):  # Pad and Overwrite
     new_img[h//2: h//2 + h, w//2: w//2 + w, :] = img
     cv2.imwrite(str(target_path), new_img)
 
-def pad_images():
-    cfg = get_override_cfg()
+def pad_images(label_list, img_root, pad_root):
 
-    img_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG)
-    pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
 
-    shutil.rmtree(pad_root, ignore_errors=True)
-
-    for (m,k,l) in tqdm(train_list):
+    for (m,k,l) in tqdm(label_list):
         video = Path(img_root, m.replace('.avi', ''))  # originally M_xxxxx.avi, now a folder named M_xxxxx
         target_video = Path(pad_root, m.replace('.avi', ''))
         imgs = glob.glob(str(Path(video, '*.jpg')), recursive=False)
@@ -85,4 +80,12 @@ def pad_images():
 
 
 if __name__ == '__main__':
-    pad_images()
+    cfg = get_override_cfg()
+
+    img_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG)
+    pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
+
+    shutil.rmtree(pad_root, ignore_errors=True)
+
+    pad_images(train_list, img_root, pad_root)
+    pad_images(test_list, img_root, pad_root)
