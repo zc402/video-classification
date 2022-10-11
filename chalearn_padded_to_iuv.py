@@ -33,6 +33,9 @@ def to_iuv(cfg, name_of_set='train'):
         jpg_wildcard = Path(xxx_folder, "**", "*.jpg")
         jpg_wildcard = str(jpg_wildcard)
         output_path = Path(iuv_root, name_of_set, xxx_name + '.pkl')
+        if output_path.exists():
+            print(f'ignore existed file: {str(output_path)}')
+            continue
         output_path = str(output_path)
         apply_net_command = f'python {str(apply_net)} dump {str(yaml_path)} \
             https://dl.fbaipublicfiles.com/densepose/densepose_rcnn_R_50_FPN_s1x/165712039/model_final_162be9.pkl \

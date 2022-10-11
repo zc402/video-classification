@@ -16,6 +16,7 @@ _C.CHALEARN.IMG = 'Images'  # Path of converted images
 _C.CHALEARN.IMG_SAMPLE_INTERVAL = 5  # Sample 1 image per 5 images
 _C.CHALEARN.PAD = 'Pad'  # Path of padded videos
 _C.CHALEARN.IUV = 'IUV'  # IUV from densepose
+_C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
 _C.DENSEPOSE = '/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose'  # base dir of apply_net.py
 
 def get_cfg():

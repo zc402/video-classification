@@ -46,6 +46,8 @@ cfg = get_override_cfg()
 
 iso_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.ISO)
 sample_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.SAMPLE)
+
+sample_root.mkdir(exist_ok=True)
 allow_class = cfg.CHALEARN.SAMPLE_CLASS
 
 train_txt = Path(iso_root, 'IsoGD_labels', 'train.txt')
