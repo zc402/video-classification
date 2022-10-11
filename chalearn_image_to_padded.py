@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from config.defaults import get_override_cfg
+from utils.chalearn import train_list, test_list
 
 # def pad_single_video(
 #     input_video:Path, 
@@ -53,29 +54,34 @@ from config.defaults import get_override_cfg
 #         new_path = Path(video.parent, new_name)
 #         os.rename(old_path, str(new_path))
 
-def pad_an_img(img_path):  # Pad and Overwrite
+def pad_an_img(img_path:Path, target_path:Path):  # Pad and Overwrite
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     img = cv2.imread(str(img_path))
     h, w, c = img.shape
     new_img = np.zeros(shape=(h*2, w*2, c), dtype=img.dtype)
     new_img[h//2: h//2 + h, w//2: w//2 + w, :] = img
-    cv2.imwrite(img_path, new_img)
+    cv2.imwrite(str(target_path), new_img)
 
 def pad_images():
     cfg = get_override_cfg()
 
-    img_root = cfg.CHALEARN.IMG_ROOT
-    # img_root = '/home/zc/Downloads/denseposetest'
-    img_root = Path(img_root)
-    pad_root = cfg.CHALEARN.PAD_ROOT
-    pad_root = Path(pad_root)
+    img_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG)
+    pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
 
-    if pad_root.is_dir():
-        raise Exception(f'{pad_root} already exists')
+    shutil.rmtree(pad_root, ignore_errors=True)
 
-    shutil.copytree(img_root, pad_root)
-    full_imgs = glob.glob(str(Path(pad_root, '**', '*.jpg')), recursive=True)
-    for img_path in tqdm(full_imgs):
-        pad_an_img(img_path)
+    for (m,k,l) in tqdm(train_list):
+        video = Path(img_root, m.replace('.avi', ''))  # originally M_xxxxx.avi, now a folder named M_xxxxx
+        target_video = Path(pad_root, m.replace('.avi', ''))
+        imgs = glob.glob(str(Path(video, '*.jpg')), recursive=False)
+        for img in imgs:
+            target_img = Path(target_video, Path(img).name)
+            pad_an_img(img, target_img)
+
+    # shutil.copytree(img_root, pad_root, ignore=shutil.ignore_patterns('K_*.avi'))  #性能太差
+    # full_imgs = glob.glob(str(Path(pad_root, '**', '*.jpg')), recursive=True)
+    # for img_path in tqdm(full_imgs):
+    #     pad_an_img(img_path)
 
 
 if __name__ == '__main__':

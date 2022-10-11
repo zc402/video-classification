@@ -7,8 +7,9 @@ import cv2
 from pathlib import Path
 from tqdm import tqdm
 import shutil
+from utils.chalearn import train_list, test_list
 
-from config.defaults import get_cfg
+from config.defaults import get_override_cfg
 
 def video2images(video: Path, img_folder: Path):
     """
@@ -32,17 +33,13 @@ def video2images(video: Path, img_folder: Path):
 
 
 if __name__ == '__main__':
-    cfg = get_cfg()
-    override = Path('..', 'cfg_override.yaml')
-    if(override.is_file()):
-        cfg.merge_from_file(override)
+    cfg = get_override_cfg()
+    sample_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.SAMPLE)
+    img_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG)
     
-    if Path(cfg.CHALEARN.IMG_ROOT).is_dir():
-        raise Exception(f'{cfg.CHALEARN.IMG_ROOT} already exists')
-    
-    shutil.copytree(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG_ROOT)
+    shutil.copytree(sample_root, img_root)  # To copy folder structure: ignore=shutil.ignore_patterns('*.avi')
 
-    avi_list = glob.glob(str(Path(cfg.CHALEARN.IMG_ROOT, '**', '*.avi')), recursive=True)
+    avi_list = glob.glob(str(Path(img_root, '**', '*.avi')), recursive=True)
     for video in tqdm(avi_list):
         video = Path(video)
         video2images(video, video.parent / video.stem)  # 001/K_00001

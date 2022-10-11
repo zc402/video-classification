@@ -5,12 +5,17 @@ _C = CfgNode()
 
 _C.CHALEARN = CfgNode()
 
-_C.CHALEARN.ROOT = '/home/zc/Datasets/ChaLearn/ChaLearn Isolated Gesture Recognition'
+_C.CHALEARN.ROOT = '/home/zc/Datasets/ChaLearnIso'  # The root of all other folders
+
 _C.CHALEARN.NUM_CLASS = 249  # labels: 1~249
 _C.CHALEARN.BATCH_SIZE = 4
-_C.CHALEARN.IMG_ROOT = '/home/zc/Datasets/ChaLearn/ChaLearnIsoImages'  # Path of converted images
-_C.CHALEARN.PAD_ROOT = '/home/zc/Datasets/ChaLearn/ChaLearnIsoPad'  # Path of padded videos
-
+_C.CHALEARN.ISO = 'Iso'  # The folder of chalearn isogd
+_C.CHALEARN.SAMPLE = 'Sample'  # Sample gestures from the whole dataset for debugging
+_C.CHALEARN.SAMPLE_CLASS = 5  # range of samples, 1~249
+_C.CHALEARN.IMG = 'Images'  # Path of converted images
+_C.CHALEARN.IMG_SAMPLE_INTERVAL = 5  # Sample 1 image per 5 images
+_C.CHALEARN.PAD = 'Pad'  # Path of padded videos
+_C.CHALEARN.IUV = 'IUV'  # IUV from densepose
 
 def get_cfg():
     """
