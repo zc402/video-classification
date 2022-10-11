@@ -25,47 +25,80 @@ def load_iuv(pkl_path):
 def crop(img_path, target_path, bbox):
     if Path(target_path).exists():
         return  # Do not overwrite
-    if bbox is None:
-        black = np.zeros((10, 10, 3), dtype=np.uint8)
-        cv2.imwrite(str(target_path), black)
-        return
+    # if bbox is None:
+    #     black = np.zeros((10, 10, 3), dtype=np.uint8)
+    #     cv2.imwrite(str(target_path), black)
+    #     return
     x1, y1, x2, y2 = bbox
     img = cv2.imread(str(img_path))  # H W C
     cropped = img[y1:y2, x1:x2, :]
     cv2.imwrite(str(target_path), cropped)
 
+
 def crop_body_parts(human_img_path, target_relative_path, iuv):
     """
     human_img_path: path of cropped human image
     """
-    if Path(target_path).exists():
-        return  # Do not overwrite
+
     lhand = 4
     rhand = 3
     I = iuv['pred_densepose'][0].labels  # pixel region segmentation results
 
     target_path = Path(cfg.CHALEARN.ROOT, 'CropLHand', target_relative_path)
+    if Path(target_path).exists():
+        return  # Do not overwrite
     target_path.parent.mkdir(parents=True, exist_ok=True)
     mask_lhand = (I == lhand)
     mask_lhand = mask_lhand.cpu().numpy().astype(np.uint8)
     contours, _ = cv2.findContours(mask_lhand,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
     if len(contours)==0:
         return
-    elif len(contours)==1:
+    else:
         img = cv2.imread(str(human_img_path))
-        x, y, w, h = cv2.boundingRect(contours[0])
-        cropped = img[y:y+h, x:x+w, :]
-        show = False
-        if show:
-            fig, ax = plt.subplots(1)
-            ax.imshow(img)
-            rect = patches.Rectangle((x, y), w, h, linewidth=1,
-                            edgecolor='r', facecolor="none")
-            ax.add_patch(rect)
-            plt.show()
+        if len(contours)==1:
+            x, y, w, h = cv2.boundingRect(contours[0])
+            if w < 15 or h < 15:
+                return  # Too small, probably wrong
+            cropped = img[y:y+h, x:x+w, :]
+            # Show --------------------
+            show = False
+            if show:
+                fig, ax = plt.subplots(1)
+                ax.imshow(img)
+                rect = patches.Rectangle((x, y), w, h, linewidth=1,
+                                edgecolor='r', facecolor="none")
+                ax.add_patch(rect)
+                plt.show()
+            
+        else:  # len > 1
+            # Show-------------
+            show = False
+            if show:
+                fig, ax = plt.subplots(1)
+                ax.imshow(img)
+                for contour in contours:
+                    x, y, w, h = cv2.boundingRect(contour)
+                    rect = patches.Rectangle((x, y), w, h, linewidth=1,
+                                edgecolor='r', facecolor="none")
+                    ax.add_patch(rect)
+                plt.show()
+                plt.close()
+            # Write----------------
+            area = []
+            xywh = []
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                area.append(w*h)
+                xywh.append((x,y,w,h))
+            amax = np.array(area).argmax()
+            largest_xywh = xywh[amax]
+            x,y,w,h = largest_xywh
+            if w < 15 or h < 15:
+                return  # Too small, probably wrong
+            cropped = img[y:y+h, x:x+w, :]
+            
         cv2.imwrite(str(target_path), cropped)
-        pass
-    
+
 
 def extract_crop(name_of_set):
     pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
@@ -90,7 +123,7 @@ def extract_crop(name_of_set):
 
             if iuv_item['pred_boxes_XYXY'].size()[0] == 0:
                 # No detection
-                crop(pad_img_path, crop_img_path, None)
+                # crop(pad_img_path, crop_img_path, None)
                 print(f"No box detection: {pad_img_path}")
             else:
                 bbox = iuv_item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
