@@ -40,64 +40,53 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
     human_img_path: path of cropped human image
     """
 
-    lhand = 4
-    rhand = 3
     I = iuv['pred_densepose'][0].labels  # pixel region segmentation results
 
-    target_path = Path(cfg.CHALEARN.ROOT, 'CropLHand', target_relative_path)
-    if Path(target_path).exists():
-        return  # Do not overwrite
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    mask_lhand = (I == lhand)
-    mask_lhand = mask_lhand.cpu().numpy().astype(np.uint8)
-    contours, _ = cv2.findContours(mask_lhand,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-    if len(contours)==0:
-        return
-    else:
+    def _crop_part(part_idx, save_name):
+
+        target_path = Path(cfg.CHALEARN.ROOT, save_name, target_relative_path)
+        if Path(target_path).exists():
+            return  # Do not overwrite
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        mask = (I == part_idx)
+        mask = mask.cpu().numpy().astype(np.uint8)
+        contours, _ = cv2.findContours(mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours)==0:
+            return         
+        # ---- len >= 1 ----
         img = cv2.imread(str(human_img_path))
-        if len(contours)==1:
-            x, y, w, h = cv2.boundingRect(contours[0])
-            if w < 15 or h < 15:
-                return  # Too small, probably wrong
-            cropped = img[y:y+h, x:x+w, :]
-            # Show --------------------
-            show = False
-            if show:
-                fig, ax = plt.subplots(1)
-                ax.imshow(img)
-                rect = patches.Rectangle((x, y), w, h, linewidth=1,
-                                edgecolor='r', facecolor="none")
-                ax.add_patch(rect)
-                plt.show()
-            
-        else:  # len > 1
-            # Show-------------
-            show = False
-            if show:
-                fig, ax = plt.subplots(1)
-                ax.imshow(img)
-                for contour in contours:
-                    x, y, w, h = cv2.boundingRect(contour)
-                    rect = patches.Rectangle((x, y), w, h, linewidth=1,
-                                edgecolor='r', facecolor="none")
-                    ax.add_patch(rect)
-                plt.show()
-                plt.close()
-            # Write----------------
-            area = []
-            xywh = []
+        # Show-------------
+        show = False
+        if show:
+            fig, ax = plt.subplots(1)
+            ax.imshow(img)
             for contour in contours:
                 x, y, w, h = cv2.boundingRect(contour)
-                area.append(w*h)
-                xywh.append((x,y,w,h))
-            amax = np.array(area).argmax()
-            largest_xywh = xywh[amax]
-            x,y,w,h = largest_xywh
-            if w < 15 or h < 15:
-                return  # Too small, probably wrong
-            cropped = img[y:y+h, x:x+w, :]
+                rect = patches.Rectangle((x, y), w, h, linewidth=1,
+                            edgecolor='r', facecolor="none")
+                ax.add_patch(rect)
+            plt.show()
+            plt.close()
+        # Write----------------
+        area = []
+        xywh = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            area.append(w*h)
+            xywh.append((x,y,w,h))
+        amax = np.array(area).argmax()
+        largest_xywh = xywh[amax]
+        x,y,w,h = largest_xywh
+        if w < 15 or h < 15:
+            return  # Too small, probably wrong
+        cropped = img[y:y+h, x:x+w, :]
             
         cv2.imwrite(str(target_path), cropped)
+    
+    lhand = 4
+    rhand = 3
+    _crop_part(lhand, 'CropLHand')
+    _crop_part(rhand, 'CropRHand')
 
 
 def extract_crop(name_of_set):
