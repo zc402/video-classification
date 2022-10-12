@@ -22,7 +22,7 @@ def load_iuv(pkl_path):
     return result
 
 
-def crop(img_path, target_path, bbox):
+def crop_body(img_path, target_path, bbox):
     if Path(target_path).exists():
         return  # Do not overwrite
     # if bbox is None:
@@ -91,11 +91,22 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
     lhand = [4]
     rhand = [3]
     larm = [21, 19, 17, 15]
+    rarm = [20, 22, 16, 18]
+    torso = [1, 2]
+    head = [23, 24]
 
     _crop_part(lhand, 'CropLHand')
     _crop_part(rhand, 'CropRHand')
     _crop_part(larm, 'CropLArm')
+    _crop_part(rarm, 'CropRArm')
+    _crop_part(torso, 'CropTorso')
+    _crop_part(head, 'CropHead')
 
+    _crop_part(lhand + larm, 'CropLHandArm')
+    _crop_part(rhand + rarm, 'CropRHandArm')
+
+    _crop_part(head + torso, 'CropHeadTorso')
+    
 
 def extract_crop(name_of_set):
     pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
@@ -114,6 +125,7 @@ def extract_crop(name_of_set):
             x5 = file_path.parent.name  # M_00068
             x3 = Path(iuv).stem  # 001
             x3x5img = Path(x3, x5, x_img)  # 001/M_00068/00000.jpg
+            nsetx3x5img = Path(name_of_set, x3x5img)
             pad_img_path = Path(pad_root, name_of_set, x3x5img)
             crop_img_path = Path(crop_body_root, name_of_set, x3x5img)
             crop_img_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,8 +136,8 @@ def extract_crop(name_of_set):
                 print(f"No box detection: {pad_img_path}")
             else:
                 bbox = iuv_item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
-                crop(pad_img_path, crop_img_path, bbox)
-                crop_body_parts(crop_img_path, x3x5img, iuv_item)
+                crop_body(pad_img_path, crop_img_path, bbox)
+                crop_body_parts(crop_img_path, nsetx3x5img, iuv_item)
         
 
     # for (m,k,l) in tqdm(label_list):
