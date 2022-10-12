@@ -4,9 +4,11 @@ from torch.utils.data import Dataset
 import cv2
 import numpy as np
 import random
+import matplotlib.pyplot as plt 
 
 from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
+
 cfg = get_override_cfg()
 
 class ChalearnVideoDataset(Dataset):
@@ -79,7 +81,17 @@ class ChalearnVideoDataset(Dataset):
             collected_features[key] = collected
         return collected_features
 
-dataset = ChalearnVideoDataset('train')
-for batch in dataset:
-    print(batch.keys())
-    pass
+def _test():
+    dataset = ChalearnVideoDataset('train')
+    counter = 0
+    for batch in dataset:
+        for i in range(0, 5):
+            # cv2.imwrite(f'./debug/{counter}_{i}_L.jpg', batch['CropLHand'][i], )
+            cv2.imwrite(f'./debug/{counter}_{i}_R.jpg', batch['CropRHand'][i], )
+        counter = counter + 1
+        # plt.imshow()
+        # plt.show()
+        # plt.imshow(batch['CropRHand'][4])
+        # plt.show()
+        # plt.cla()
+        pass
