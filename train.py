@@ -43,32 +43,20 @@ class Trainer():
         state_dict = torch.load(self.ckpt)
         self.model.load_state_dict(state_dict)
 
+
     def prepare_data(self, batch):
-        large = ['CropBody', 'CropTorsoLArm', 'CropTorsoRArm']
-        medium = ['CropLArm', 'CropRArm', 'CropLHandArm', 'CropRHandArm']
-        small = ['CropLHand', 'CropRHand', ]
-        x1_list = [batch[key] for key in large]  # List of NTCHW
-        x1 = torch.concat(x1_list, dim=2)  # Concat on C dim
-
-        x2_list = [batch[key] for key in medium]
-        x2 = torch.concat(x2_list, dim=2)
-
-        x3_list = [batch[key] for key in small]
-        x3 = torch.concat(x3_list, dim=2)
-
-        N,T,C,H,W = x1.size()
-        x1 = torch.reshape(x1, (N*T, C,H,W))  # --> (NT)CHW
-        N,T,C,H,W = x2.size()
-        x2 = torch.reshape(x2, (N*T, C,H,W))
-        N,T,C,H,W = x3.size()
-        x3 = torch.reshape(x3, (N*T, C,H,W))
-
-        # self.debug_show(x)
-        x1 = x1.cuda()
-        x2 = x2.cuda()
-        x3 = x3.cuda()
         y_true = batch['label'].cuda()
-        return [x1, x2, x3], y_true
+
+        large = ['CropBody', 'CropTorsoLArm', 'CropTorsoRArm']
+        medium = ['CropLHandArm', 'CropRHandArm']
+        small = ['CropLHand', 'CropRHand', ]
+
+        white_list = large + medium + small
+        batch = {k:v for k,v in batch.items() if k in white_list}
+        batch = {k: x.cuda() for k, x in batch.items()}
+
+        # self.debug_show(x)        
+        return batch.values(), y_true
 
     def epoch(self):
 

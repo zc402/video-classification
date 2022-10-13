@@ -22,7 +22,7 @@ class ResnetWrapper(Module):
 
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.resnet = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True).cuda()
+        self.resnet = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
         self.resnet.conv1 = Conv2d(in_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
         self.resnet.fc = Linear(512, out_channels)
     
@@ -38,30 +38,33 @@ class MultipleResnet(Module):
         self.N = cfg.CHALEARN.BATCH_SIZE
         self.T = cfg.CHALEARN.CLIP_LEN
         self.resnet_out_channels = 512
+        num_resnet = 7
 
-        self.r_lg = ResnetWrapper(3*3, self.resnet_out_channels)  # Large crops
-        self.r_md = ResnetWrapper(3*4, self.resnet_out_channels)  
-        self.r_sm = ResnetWrapper(3*2, self.resnet_out_channels)  
+        self.resnet_list = torch.nn.ModuleList([ResnetWrapper(3, self.resnet_out_channels) for i in range(num_resnet)])
+        [model.cuda() for model in self.resnet_list]
 
-        self.fc = Linear(self.resnet_out_channels, self.num_class)
+        self.fc = torch.nn.ModuleList([Linear(self.resnet_out_channels, self.num_class) for i in range(num_resnet)])
     
-    def forward(self, x):
-        x1, x2, x3 = x
-        x1 = self.r_lg(x1)
-        x1 = torch.reshape(x1, (self.N, self.T, self.resnet_out_channels))  # N,T,Out
-
-        x2 = self.r_md(x2)
-        x2 = torch.reshape(x2, (self.N, self.T, self.resnet_out_channels))
-
-        x3 = self.r_sm(x3)
-        x3 = torch.reshape(x3, (self.N, self.T, self.resnet_out_channels))
+    def forward(self, x_s):
+        # x_s: list of x
+        # x.size(): NTCHW
+        y_pred_list = []
+        for i, x in enumerate(x_s):
+            N,T,C,H,W = x.size()
+            x = torch.reshape(x, (N*T, C,H,W))
+            y_pred = self.resnet_list[i](x)  # N,channels
+            y_pred = torch.reshape(y_pred, (N, T, self.resnet_out_channels))  # NC
+            y_pred = self.fc[i](y_pred)  #N,Class
+            y_pred_list.append(y_pred)
 
         # how much weight to assign to a channel, given a gesture
-        # x = torch.concat([x1, x2, x3], dim=-1)
-        x1 = self.fc(x1)
-        x2 = self.fc(x2)
-        x3 = self.fc(x3)
-        x = x1 + x2 + x3  # N,T,Class
+        y = torch.stack(y_pred_list, dim=0)
+        y = torch.sum(y, dim=0)  # N,T,Class
+        # Mean over time dim
+        y = torch.mean(y, dim=1)  # N,Class
+        return y
 
-        x = torch.mean(x, dim=1)  # N,Class
+    def _NTCHW_to_NCHW(self, x):
+        N,T,C,H,W = x.size()
+        x = torch.reshape(x, (N*T, C,H,W))
         return x
