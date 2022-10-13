@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import random
 import matplotlib.pyplot as plt 
+from torchvision import transforms
 
 from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
@@ -20,7 +21,11 @@ class ChalearnVideoDataset(Dataset):
         # Load label list
         self.labels = get_labels(name_of_set)
         self.clip_len = cfg.CHALEARN.CLIP  # length of clip (frames)
-
+    
+        self.preprocess = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
 
     def _pad_resize_img(self, img, new_size:int):  # Pad to square and resize
         h, w, c = img.shape
@@ -45,9 +50,11 @@ class ChalearnVideoDataset(Dataset):
             if frame_path.exists():
                 img = cv2.imread(str(frame_path))
                 img = self._pad_resize_img(img, size)
-                res_dict[feature_name] = img
             else:
-                res_dict[feature_name] = np.zeros((size, size, 3), dtype=np.uint8)
+                img = np.zeros((size, size, 3), dtype=np.uint8)
+            input_tensor = self.preprocess(img)
+            res_dict[feature_name] = input_tensor
+
         return res_dict
 
     def __len__(self):
@@ -77,8 +84,9 @@ class ChalearnVideoDataset(Dataset):
         collected_features = {}
         for key in selected_features[0].keys():
             features = [f[key] for f in selected_features]
-            collected = np.stack(features)
+            collected = np.stack(features)  # Stack time dim
             collected_features[key] = collected
+        collected_features['label'] = l - 1  # Chalearn label starts from 1 while torch requires 0 
         return collected_features
 
 def _test():
