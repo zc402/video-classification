@@ -8,7 +8,7 @@ _C.CHALEARN = CfgNode()
 _C.CHALEARN.ROOT = '/home/zc/Datasets/ChaLearnIso'  # The root of all other folders
 
 _C.CHALEARN.NUM_CLASS = 249  # labels: 1~249
-_C.CHALEARN.BATCH_SIZE = 4
+_C.CHALEARN.BATCH_SIZE = 10
 _C.CHALEARN.ISO = 'Iso'  # The folder of chalearn isogd
 _C.CHALEARN.SAMPLE = 'Sample'  # Sample gestures from the whole dataset for debugging
 _C.CHALEARN.SAMPLE_CLASS = 5  # range of samples, 1~249
@@ -17,7 +17,7 @@ _C.CHALEARN.IMG_SAMPLE_INTERVAL = 5  # Sample 1 image per 5 images
 _C.CHALEARN.PAD = 'Pad'  # Path of padded videos
 _C.CHALEARN.IUV = 'IUV'  # IUV from densepose
 _C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
-_C.CHALEARN.CLIP = 8  # Clip duration
+_C.CHALEARN.CLIP_LEN = 8  # Clip duration
 
 _C.DENSEPOSE = '/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose'  # base dir of apply_net.py
 

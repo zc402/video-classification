@@ -27,11 +27,16 @@ class ChalearnVideoDataset(Dataset):
 
         # Load label list
         self.labels = get_labels(name_of_set)
-        self.clip_len = cfg.CHALEARN.CLIP  # length of clip (frames)
+        self.clip_len = cfg.CHALEARN.CLIP_LEN  # length of clip (frames)
     
-        self.preprocess = transforms.Compose([
+        self.preprocessBGR = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.preprocessUV = transforms.Compose([  # Only 1 channel
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.45], std=[0.225]),
         ])
 
     def _pad_resize_img(self, img, new_size:int):  # Pad to square and resize
@@ -60,7 +65,7 @@ class ChalearnVideoDataset(Dataset):
                 img = self._pad_resize_img(img, size)
             else:
                 img = np.zeros((size, size, 3), dtype=np.uint8)
-            input_tensor = self.preprocess(img)
+            input_tensor = self.preprocessBGR(img)
             res_dict[crop_folder_name] = input_tensor
 
         return res_dict
