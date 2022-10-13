@@ -100,6 +100,10 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
     _crop_part(larm, 'CropLArm')
     _crop_part(rarm, 'CropRArm')
     _crop_part(torso, 'CropTorso')
+
+    _crop_part(torso + larm, 'CropTorsoLArm')
+    _crop_part(torso + rarm, 'CropTorsoRArm')
+
     _crop_part(head, 'CropHead')
 
     _crop_part(lhand + larm, 'CropLHandArm')

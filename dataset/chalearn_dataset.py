@@ -19,7 +19,7 @@ class ChalearnVideoDataset(Dataset):
 
     crop_resize = {'CropLHand': 40, 'CropRHand': 40, 'CropHead': 40, 'CropTorso': 40,
     'CropLArm': 100, 'CropRArm': 100, 'CropLHandArm': 100, 'CropRHandArm': 100, 'CropHeadTorso': 100,
-    'CropBody': 200}
+    'CropBody': 200, 'CropTorsoLArm': 200, 'CropTorsoRArm': 200}
 
     def __init__(self, name_of_set:str) -> None:
         """name_of_set: train test val"""

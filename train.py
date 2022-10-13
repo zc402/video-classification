@@ -10,46 +10,13 @@ import json
 import requests
 import matplotlib.pyplot as plt
 import warnings
-from torch.nn import CrossEntropyLoss, Module, Linear
+from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
 from torch import optim
 from config.defaults import get_override_cfg
-
-from dataset.chalearn_dataset import ChalearnVideoDataset
-
 cfg = get_override_cfg()
 
-class ResnetWrapper(Module):
-
-    def __init__(self):
-        super().__init__()
-        self.num_class = cfg.CHALEARN.SAMPLE_CLASS
-
-        self.N = cfg.CHALEARN.BATCH_SIZE
-        self.T = cfg.CHALEARN.CLIP_LEN
-
-        self.resnet = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True).cuda()
-        self.resnet.fc = Linear(512, 256)
-
-        self.resnet2 = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True).cuda()
-        self.resnet2.fc = Linear(512, 256)
-
-        self.fc = Linear(512, self.num_class)
-    
-    def forward(self, x):
-        x1, x2 = x
-        x1 = self.resnet(x1)
-        x1 = torch.reshape(x1, (self.N, self.T, 256))  # N,T,Out
-        # x1 = torch.mean(x1, dim=1)  # N,C
-
-        x2 = self.resnet2(x2)
-        x2 = torch.reshape(x2, (self.N, self.T, 256))
-        # x2 = torch.mean(x2, dim=1)
-        x = torch.concat([x1, x2], dim=-1)
-        x = self.fc(x)
-
-        x = torch.mean(x, dim=1)  # N,C
-        return x
-
+from dataset.chalearn_dataset import ChalearnVideoDataset
+from model.multiple_resnet import MultipleResnet
 
 class Trainer():
 
@@ -60,7 +27,7 @@ class Trainer():
         self.test_dataset = ChalearnVideoDataset('test')
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True)
     
-        self.model = ResnetWrapper().cuda()
+        self.model = MultipleResnet().cuda()
         self.loss = CrossEntropyLoss()
         self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
         self.num_step = 0
@@ -77,17 +44,31 @@ class Trainer():
         self.model.load_state_dict(state_dict)
 
     def prepare_data(self, batch):
-        x1 = batch['CropBody']  # NTCHW
-        x2 = batch['CropRHandArm']  
+        large = ['CropBody', 'CropTorsoLArm', 'CropTorsoRArm']
+        medium = ['CropLArm', 'CropRArm', 'CropLHandArm', 'CropRHandArm']
+        small = ['CropLHand', 'CropRHand', ]
+        x1_list = [batch[key] for key in large]  # List of NTCHW
+        x1 = torch.concat(x1_list, dim=2)  # Concat on C dim
+
+        x2_list = [batch[key] for key in medium]
+        x2 = torch.concat(x2_list, dim=2)
+
+        x3_list = [batch[key] for key in small]
+        x3 = torch.concat(x3_list, dim=2)
+
         N,T,C,H,W = x1.size()
         x1 = torch.reshape(x1, (N*T, C,H,W))  # --> (NT)CHW
         N,T,C,H,W = x2.size()
         x2 = torch.reshape(x2, (N*T, C,H,W))
+        N,T,C,H,W = x3.size()
+        x3 = torch.reshape(x3, (N*T, C,H,W))
+
         # self.debug_show(x)
         x1 = x1.cuda()
         x2 = x2.cuda()
+        x3 = x3.cuda()
         y_true = batch['label'].cuda()
-        return [x1, x2], y_true
+        return [x1, x2, x3], y_true
 
     def epoch(self):
 
@@ -112,18 +93,19 @@ class Trainer():
             loss_tensor.backward()
             self.optim.step()
 
-            # if self.num_step % 20 == 0:
-                
-            # self.num_step = self.num_step + 1 
-        print(f'Step {self.num_step}, loss {round(loss_tensor.item(), 3)}')
+            if self.num_step % 100 == 0:
+                print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
+            self.num_step = self.num_step + 1 
+        
     
     def train(self):
+        self.model.train()
         if self.ckpt.exists():
             self.load_ckpt()
         else:
             print('warning: checkpoint not found!')
         
-        for epoch in range(10):
+        for epoch in range(20):
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
@@ -131,19 +113,22 @@ class Trainer():
             self.test()
     
     def test(self):
+        self.model.eval()  # Temporally switch to eval mode
         print("Testing ...")
         correct_list = []
         for batch in tqdm(self.test_loader):
 
             x, y_true = self.prepare_data(batch)
-            y_pred = self.model(x)  # N,class_score
+            with torch.no_grad():
+                y_pred = self.model(x)  # N,class_score
             y_pred = torch.argmax(y_pred, dim=-1)
             correct = y_pred == y_true
             correct = correct.cpu().numpy()
             correct_list.append(correct)
         c = np.concatenate(correct_list, axis=0)
         accuracy = c.sum() / len(c)
-        print(f'Accuracy: {round(accuracy, 2)}. {c.sum()} / {len(c)}')
+        print(f'Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
+        self.model.train()  # Recover to training mode
     
     def debug_show(self, x):
         # NCHW
