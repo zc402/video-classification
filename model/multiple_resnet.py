@@ -43,7 +43,7 @@ class MultipleResnet(Module):
         self.r_md = ResnetWrapper(3*4, self.resnet_out_channels)  
         self.r_sm = ResnetWrapper(3*2, self.resnet_out_channels)  
 
-        self.fc = Linear(self.resnet_out_channels*2, self.num_class)
+        self.fc = Linear(self.resnet_out_channels, self.num_class)
     
     def forward(self, x):
         x1, x2, x3 = x
@@ -56,8 +56,12 @@ class MultipleResnet(Module):
         x3 = self.r_sm(x3)
         x3 = torch.reshape(x3, (self.N, self.T, self.resnet_out_channels))
 
-        x = torch.concat([x1, x2], dim=-1)
-        x = self.fc(x)
+        # how much weight to assign to a channel, given a gesture
+        # x = torch.concat([x1, x2, x3], dim=-1)
+        x1 = self.fc(x1)
+        x2 = self.fc(x2)
+        x3 = self.fc(x3)
+        x = x1 + x2 + x3  # N,T,Class
 
-        x = torch.mean(x, dim=1)  # N,C
+        x = torch.mean(x, dim=1)  # N,Class
         return x

@@ -22,10 +22,10 @@ class Trainer():
 
     def __init__(self):
         self.train_dataset = ChalearnVideoDataset('train')
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=4)
 
         self.test_dataset = ChalearnVideoDataset('test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=4)
     
         self.model = MultipleResnet().cuda()
         self.loss = CrossEntropyLoss()
@@ -109,7 +109,7 @@ class Trainer():
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
-            self.save_ckpt()
+            # self.save_ckpt()
             self.test()
     
     def test(self):
