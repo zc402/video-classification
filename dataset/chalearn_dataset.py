@@ -12,7 +12,14 @@ from utils.chalearn import get_labels, train_list, test_list
 
 cfg = get_override_cfg()
 
+# The crops and corresponding pixels
+
+
 class ChalearnVideoDataset(Dataset):
+
+    crop_resize = {'CropLHand': 40, 'CropRHand': 40, 'CropHead': 40, 'CropTorso': 40,
+    'CropLArm': 100, 'CropRArm': 100, 'CropLHandArm': 100, 'CropRHandArm': 100, 'CropHeadTorso': 100,
+    'CropBody': 200}
 
     def __init__(self, name_of_set:str) -> None:
         """name_of_set: train test val"""
@@ -42,18 +49,19 @@ class ChalearnVideoDataset(Dataset):
         """
         nsetx3x5img: train/001/M_00068/00000.jpg
         """
-        size = 40  # pixels
-        feature_folder_list = ['CropLHand', 'CropRHand']
+        # size = 100  # pixels
+        feature_folder_list = self.crop_resize.keys()
         res_dict = {key: None for key in feature_folder_list}
-        for feature_name in res_dict.keys():
-            frame_path = Path(cfg.CHALEARN.ROOT, feature_name, nsetx3x5img)
+        for crop_folder_name in res_dict.keys():
+            size = self.crop_resize[crop_folder_name]
+            frame_path = Path(cfg.CHALEARN.ROOT, crop_folder_name, nsetx3x5img)
             if frame_path.exists():
                 img = cv2.imread(str(frame_path))
                 img = self._pad_resize_img(img, size)
             else:
                 img = np.zeros((size, size, 3), dtype=np.uint8)
             input_tensor = self.preprocess(img)
-            res_dict[feature_name] = input_tensor
+            res_dict[crop_folder_name] = input_tensor
 
         return res_dict
 

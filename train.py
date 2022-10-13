@@ -52,7 +52,7 @@ class Trainer():
             crop_imgs = torch.permute(crop_imgs, (1,2,0,3,4,5,))  # NTKCHW
             crop_imgs = torch.reshape(crop_imgs, (N*T, K*C, H, W,))  """
 
-            x = batch['CropLHand']  # NTCHW
+            x = batch['CropBody']  # NTCHW
             N,T,C,H,W = x.size()
             # --> (NT)CHW
             x = torch.reshape(x, (N*T, C,H,W))
