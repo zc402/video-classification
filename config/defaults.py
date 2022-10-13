@@ -21,7 +21,8 @@ _C.CHALEARN.CLIP = 8  # Clip duration
 
 _C.DENSEPOSE = '/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose'  # base dir of apply_net.py
 
-
+_C.MODEL = CfgNode()
+_C.MODEL.CKPT = './logs/checkpoints/model.ckpt'
 
 def get_cfg():
     """

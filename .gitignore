@@ -2,3 +2,4 @@ lightning_logs
 *.pyc
 __pycache__
 debug
+logs
