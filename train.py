@@ -17,22 +17,34 @@ cfg = get_override_cfg()
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
 from model.multiple_resnet import MultipleResnet
+from config.crop_cfg import crop_folder_list
 
 class Trainer():
 
     def __init__(self):
         self.train_dataset = ChalearnVideoDataset('train')
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=4)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=0)
 
         self.test_dataset = ChalearnVideoDataset('test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=4)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=0)
     
-        self.model = MultipleResnet().cuda()
+        self.model = None
         self.loss = CrossEntropyLoss()
-        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
+        self.optim = None
         self.num_step = 0
         self.ckpt = Path(cfg.MODEL.CKPT)
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
+
+    def _lazy_init_model(self, in_channels, num_resnet):
+        self.model = MultipleResnet(in_channels, num_resnet).cuda()
+        self.model.train()
+
+        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
+
+        if self.ckpt.exists():
+            self.load_ckpt()
+        else:
+            print('warning: checkpoint not found!')
 
     def save_ckpt(self):
         self.ckpt.parent.mkdir(parents=True, exist_ok=True)
@@ -45,36 +57,26 @@ class Trainer():
 
 
     def prepare_data(self, batch):
-        y_true = batch['label'].cuda()
-
-        large = ['CropBody', 'CropTorsoLArm', 'CropTorsoRArm']
-        medium = ['CropLHandArm', 'CropRHandArm']
-        small = ['CropLHand', 'CropRHand', ]
-
-        white_list = large + medium + small
-        batch = {k:v for k,v in batch.items() if k in white_list}
         batch = {k: x.cuda() for k, x in batch.items()}
+        image_features = [v for k, v in batch.items() if k in crop_folder_list]
+        y_true = batch['label']
 
-        # self.debug_show(x)        
-        return batch.values(), y_true
+        self.debug_show(batch['CropHTAH'])        
+        return image_features, y_true
 
     def epoch(self):
 
         for batch in tqdm(self.train_loader):
-
-            """# batch['CropLHand'].size() : [N, T, C, H, W]
-            crop_keys = [key for key in batch.keys() if 'Crop' in key]
-            crop_imgs = [batch[key] for key in crop_keys]  
-            crop_imgs = torch.stack(crop_imgs)  # shape: KNTCHW, K: crop_key
-            # --> (NT)(KC)HW as NCHW expected by resnet
-            K,N,T,C,H,W = crop_imgs.size()
-            crop_imgs = torch.permute(crop_imgs, (1,2,0,3,4,5,))  # NTKCHW
-            crop_imgs = torch.reshape(crop_imgs, (N*T, K*C, H, W,))  """
+            # batch: dict of NTCHW, except for labels
             
-            x, y_true = self.prepare_data(batch)
+            x, y_true = self.prepare_data(batch)  # x: list of (N,T,)C,H,W
 
+            if self.model is None:
+                N,T,C,H,W = batch['CropHTAH'].shape
+                num_resnet = len(x)
+                print(f'Construct {num_resnet} resnet channels')
+                self._lazy_init_model(in_channels=C, num_resnet=num_resnet)
             y_pred = self.model(x)
-
 
             loss_tensor = self.loss(y_pred, y_true)
             self.optim.zero_grad()
@@ -87,17 +89,12 @@ class Trainer():
         
     
     def train(self):
-        self.model.train()
-        if self.ckpt.exists():
-            self.load_ckpt()
-        else:
-            print('warning: checkpoint not found!')
         
         for epoch in range(20):
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
-            # self.save_ckpt()
+            self.save_ckpt()
             self.test()
     
     def test(self):
@@ -119,11 +116,13 @@ class Trainer():
         self.model.train()  # Recover to training mode
     
     def debug_show(self, x):
-        # NCHW
-        x = x[5].cpu().numpy()
-        x = np.transpose(x, (1,2,0))  # HWC
-        plt.imshow(x)
-        plt.savefig(Path('debug', str(self.num_step)))
+        # NTCHW
+        frame = 5
+        x = x[0][frame].cpu().numpy()
+        x = np.transpose(x, (1,2,0))  # HWC, C: BGRUV
+        U = x[:, :, 3]
+        plt.imshow(U)
+        plt.savefig(Path('debug', str(self.num_step).zfill(5)))
         plt.close()
 
 if __name__ == '__main__':

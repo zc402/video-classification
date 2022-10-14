@@ -7,7 +7,7 @@ from tqdm import tqdm
 import cv2
 import glob 
 from utils.chalearn import train_list, test_list
-
+from config.crop_cfg import crop_part_args
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt 
 
@@ -35,12 +35,15 @@ def crop_body(img_path, target_path, bbox):
     cv2.imwrite(str(target_path), cropped)
 
 
-def crop_body_parts(human_img_path, target_relative_path, iuv):
+def crop_body_parts(body_img_path, target_relative_path, iuv):
     """
-    human_img_path: path of cropped human image
+    Crop body parts from detected body image.
+
+    body_img_path: path of detected and cropped human image
     """
 
     I = iuv['pred_densepose'][0].labels.cpu().numpy()  # pixel region segmentation results
+    UV = iuv['pred_densepose'][0].uv.cpu().numpy()  # [0, 1]
 
     def _crop_part(part_indices, save_name):
 
@@ -59,7 +62,7 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
         if len(contours)==0:
             return         
         # ---- len >= 1 ----
-        img = cv2.imread(str(human_img_path))
+        img = cv2.imread(str(body_img_path))
         # Show-------------
         show = False
         if show:
@@ -83,33 +86,46 @@ def crop_body_parts(human_img_path, target_relative_path, iuv):
         largest_xywh = xywh[amax]
         x,y,w,h = largest_xywh
         if w < 15 or h < 15:
-            return  # Too small, probably wrong
+            return  # Discard images with abnormal small size
+        # Image
         cropped = img[y:y+h, x:x+w, :]
-            
         cv2.imwrite(str(target_path), cropped)
-    
-    lhand = [4]
-    rhand = [3]
-    larm = [21, 19, 17, 15]
-    rarm = [20, 22, 16, 18]
-    torso = [1, 2]
-    head = [23, 24]
+        # UV
+        U_crop = UV[0][y:y+h, x:x+w] * 256.   # 0~1 f -> 0~255 f
+        V_crop = UV[1][y:y+h, x:x+w] * 256.
 
-    _crop_part(lhand, 'CropLHand')
-    _crop_part(rhand, 'CropRHand')
-    _crop_part(larm, 'CropLArm')
-    _crop_part(rarm, 'CropRArm')
-    _crop_part(torso, 'CropTorso')
+        U_crop = U_crop.astype(np.uint8)
+        V_crop = V_crop.astype(np.uint8)
 
-    _crop_part(torso + larm, 'CropTorsoLArm')
-    _crop_part(torso + rarm, 'CropTorsoRArm')
+        U_path = target_path.parent / ('U_' + target_path.name)
+        V_path = target_path.parent / ('V_' + target_path.name)
+        cv2.imwrite(str(U_path), U_crop)
+        cv2.imwrite(str(V_path), V_crop)
 
-    _crop_part(head, 'CropHead')
+    [_crop_part(*args) for args in crop_part_args]  # args: (torso + larm, 'CropTorsoLArm')
+    # lhand = [4]
+    # rhand = [3]
+    # larm = [21, 19, 17, 15]
+    # rarm = [20, 22, 16, 18]
+    # torso = [1, 2]
+    # head = [23, 24]
 
-    _crop_part(lhand + larm, 'CropLHandArm')
-    _crop_part(rhand + rarm, 'CropRHandArm')
+    # _crop_part(lhand, 'CropLHand')
+    # _crop_part(rhand, 'CropRHand')
+    # _crop_part(larm, 'CropLArm')
+    # _crop_part(rarm, 'CropRArm')
+    # _crop_part(torso, 'CropTorso')
 
-    _crop_part(head + torso, 'CropHeadTorso')
+    # _crop_part(torso + larm, 'CropTorsoLArm')
+    # _crop_part(torso + rarm, 'CropTorsoRArm')
+
+    # _crop_part(head, 'CropHead')
+
+    # _crop_part(lhand + larm, 'CropLHandArm')
+    # _crop_part(rhand + rarm, 'CropRHandArm')
+
+    # _crop_part(head + torso, 'CropHeadTorso')
+    # _crop_part(lhand + larm + torso + head + rarm + rhand, 'CropHTAH')
     
 
 def extract_crop(name_of_set):

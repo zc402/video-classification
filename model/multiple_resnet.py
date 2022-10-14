@@ -22,9 +22,10 @@ class ResnetWrapper(Module):
 
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.resnet = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+        self.resnet = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)  # resnet50
         self.resnet.conv1 = Conv2d(in_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-        self.resnet.fc = Linear(512, out_channels)
+        self.resnet.fc = Linear(512, out_channels)  # For resnet 50
+        # self.resnet.fc = Linear(2048, out_channels)
     
     def forward(self, x):
         x = self.resnet(x)  # N,C
@@ -32,15 +33,14 @@ class ResnetWrapper(Module):
 
 class MultipleResnet(Module):
 
-    def __init__(self):
+    def __init__(self, in_channels, num_resnet):
         super().__init__()
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
         self.N = cfg.CHALEARN.BATCH_SIZE
         self.T = cfg.CHALEARN.CLIP_LEN
         self.resnet_out_channels = 512
-        num_resnet = 7
 
-        self.resnet_list = torch.nn.ModuleList([ResnetWrapper(3, self.resnet_out_channels) for i in range(num_resnet)])
+        self.resnet_list = torch.nn.ModuleList([ResnetWrapper(in_channels, self.resnet_out_channels) for i in range(num_resnet)])
         [model.cuda() for model in self.resnet_list]
 
         self.fc = torch.nn.ModuleList([Linear(self.resnet_out_channels, self.num_class) for i in range(num_resnet)])

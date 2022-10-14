@@ -7,6 +7,7 @@ import random
 import matplotlib.pyplot as plt 
 from torchvision import transforms
 
+from config.crop_cfg import crop_resize_dict, crop_folder_list
 from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
 
@@ -17,9 +18,8 @@ cfg = get_override_cfg()
 
 class ChalearnVideoDataset(Dataset):
 
-    crop_resize = {'CropLHand': 40, 'CropRHand': 40, 'CropHead': 40, 'CropTorso': 40,
-    'CropLArm': 100, 'CropRArm': 100, 'CropLHandArm': 100, 'CropRHandArm': 100, 'CropHeadTorso': 100,
-    'CropBody': 200, 'CropTorsoLArm': 200, 'CropTorsoRArm': 200}
+
+    crop_resize = crop_resize_dict  # {"CropFolderName": size}
 
     def __init__(self, name_of_set:str) -> None:
         """name_of_set: train test val"""
@@ -31,15 +31,17 @@ class ChalearnVideoDataset(Dataset):
     
         self.preprocessBGR = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406, 0.45, 0.45], std=[0.229, 0.224, 0.225, 0.225, 0.225]),
         ])
 
-        self.preprocessUV = transforms.Compose([  # Only 1 channel
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.45], std=[0.225]),
-        ])
+        # self.preprocessUV = transforms.Compose([  # Only 1 channel
+        #     transforms.ToTensor(),
+        #     transforms.Normalize(mean=[0.45], std=[0.225]),
+        # ])
 
     def _pad_resize_img(self, img, new_size:int):  # Pad to square and resize
+        if len(img.shape) == 2:
+            img = img[:, :, np.newaxis]
         h, w, c = img.shape
         m = max(h, w)
         nx = (m-w) // 2  # The x coord in new image
@@ -47,6 +49,8 @@ class ChalearnVideoDataset(Dataset):
         new_img = np.zeros(shape=(m, m, c), dtype=img.dtype)
         new_img[ny:ny+h, nx:nx+w, :] = img  # A square image with original content at center
         resize_img = cv2.resize(new_img, (new_size, new_size), interpolation=cv2.INTER_CUBIC)
+        if len(resize_img.shape) == 2:
+            resize_img = resize_img[:, :, np.newaxis]
         return resize_img
 
 
@@ -55,17 +59,20 @@ class ChalearnVideoDataset(Dataset):
         nsetx3x5img: train/001/M_00068/00000.jpg
         """
         # size = 100  # pixels
-        feature_folder_list = self.crop_resize.keys()
-        res_dict = {key: None for key in feature_folder_list}
+
+        res_dict = {key: None for key in crop_folder_list}
         for crop_folder_name in res_dict.keys():
             size = self.crop_resize[crop_folder_name]
             frame_path = Path(cfg.CHALEARN.ROOT, crop_folder_name, nsetx3x5img)
             if frame_path.exists():
                 img = cv2.imread(str(frame_path))
-                img = self._pad_resize_img(img, size)
+                img_U = cv2.imread(str(Path(frame_path.parent, 'U_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
+                img_V = cv2.imread(str(Path(frame_path.parent, 'V_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
+                img, img_U, img_V = [self._pad_resize_img(x, size) for x in (img, img_U, img_V)]  # HWC
+                img_mul = np.concatenate([img, img_U, img_V], axis=-1)
             else:
-                img = np.zeros((size, size, 3), dtype=np.uint8)
-            input_tensor = self.preprocessBGR(img)
+                img_mul = np.zeros((size, size, 5), dtype=np.uint8)
+            input_tensor = self.preprocessBGR(img_mul)
             res_dict[crop_folder_name] = input_tensor
 
         return res_dict
