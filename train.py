@@ -22,11 +22,18 @@ from config.crop_cfg import crop_folder_list
 class Trainer():
 
     def __init__(self):
+        debug = False
+        if debug:
+            self.num_workers = 0
+            self.save_debug_img = True
+        else:
+            self.num_workers = 4
+            self.save_debug_img = False
         self.train_dataset = ChalearnVideoDataset('train')
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=0)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
 
         self.test_dataset = ChalearnVideoDataset('test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=0)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
     
         self.model = None
         self.loss = CrossEntropyLoss()
@@ -34,6 +41,7 @@ class Trainer():
         self.num_step = 0
         self.ckpt = Path(cfg.MODEL.CKPT)
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
+        self.save_debug_img = False  # Save batch data for debug
 
     def _lazy_init_model(self, in_channels, num_resnet):
         self.model = MultipleResnet(in_channels, num_resnet).cuda()
@@ -61,7 +69,8 @@ class Trainer():
         image_features = [v for k, v in batch.items() if k in crop_folder_list]
         y_true = batch['label']
 
-        self.debug_show(batch['CropHTAH'])        
+        if self.save_debug_img:
+            self.debug_show(batch['CropHTAH'])        
         return image_features, y_true
 
     def epoch(self):
@@ -124,6 +133,7 @@ class Trainer():
         plt.imshow(U)
         plt.savefig(Path('debug', str(self.num_step).zfill(5)))
         plt.close()
+        print('image saved')
 
 if __name__ == '__main__':
     trainer = Trainer()
