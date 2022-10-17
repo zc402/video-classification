@@ -29,7 +29,7 @@ class ChalearnVideoDataset(Dataset):
         self.labels = get_labels(name_of_set)
         self.clip_len = cfg.CHALEARN.CLIP_LEN  # length of clip (frames)
     
-        self.preprocessBGR = transforms.Compose([
+        self.preprocess = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406, 0.45, 0.45], std=[0.229, 0.224, 0.225, 0.225, 0.225]),
         ])
@@ -72,7 +72,7 @@ class ChalearnVideoDataset(Dataset):
                 img_mul = np.concatenate([img, img_U, img_V], axis=-1)
             else:
                 img_mul = np.zeros((size, size, 5), dtype=np.uint8)
-            input_tensor = self.preprocessBGR(img_mul)
+            input_tensor = self.preprocess(img_mul)
             res_dict[crop_folder_name] = input_tensor
 
         return res_dict

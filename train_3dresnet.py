@@ -10,13 +10,13 @@ import json
 import requests
 import matplotlib.pyplot as plt
 import warnings
-from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
+from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d, Conv3d
 from torch import optim
 from config.defaults import get_override_cfg
 cfg = get_override_cfg()
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
-from model.multiple_resnet import MultipleResnet
+# from model.multiple_resnet import MultipleResnet
 from config.crop_cfg import crop_folder_list
 
 class Trainer():
@@ -44,8 +44,10 @@ class Trainer():
         self.save_debug_img = False  # Save batch data for debug
 
     def _lazy_init_model(self, in_channels, num_resnet):
-        self.model = MultipleResnet(in_channels, num_resnet).cuda()
+        self.model = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
+        self.model.blocks[0].conv = Conv3d(2, 64, (1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
         self.model.train()
+        self.model.cuda()
 
         self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
 
@@ -78,13 +80,16 @@ class Trainer():
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
-            x, y_true = self.prepare_data(batch)  # x: list of (N,T,)C,H,W
+            # x, y_true = self.prepare_data(batch)  # x: list of (N,T,)C,H,W
+            x = batch['CropHTAH'][:, :, 3:].cuda()
+            y_true = batch['label'].cuda()
 
             if self.model is None:
                 N,T,C,H,W = batch['CropHTAH'].shape
                 num_resnet = len(x)
                 print(f'Construct {num_resnet} resnet channels')
                 self._lazy_init_model(in_channels=C, num_resnet=num_resnet)
+            x = torch.permute(x, [0, 2, 1, 3, 4])  # NCTHW
             y_pred = self.model(x)
 
             loss_tensor = self.loss(y_pred, y_true)
@@ -100,11 +105,11 @@ class Trainer():
     
     def train(self):
         
-        for epoch in range(20):
+        for epoch in range(50):
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
-            # self.save_ckpt()
+            self.save_ckpt()
             self.test()
     
     def test(self):
@@ -113,7 +118,10 @@ class Trainer():
         correct_list = []
         for batch in tqdm(self.test_loader):
 
-            x, y_true = self.prepare_data(batch)
+            # x, y_true = self.prepare_data(batch)
+            x = batch['CropHTAH'][:, :, 3:].cuda()
+            x = torch.permute(x, [0, 2, 1, 3, 4])
+            y_true = batch['label'].cuda()
             with torch.no_grad():
                 y_pred = self.model(x)  # N,class_score
             y_pred = torch.argmax(y_pred, dim=-1)
