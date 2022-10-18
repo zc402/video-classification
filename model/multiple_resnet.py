@@ -34,14 +34,17 @@ class ResnetWrapper(Module):
 
 class MultipleResnet(Module):
 
-    def __init__(self, in_channels, num_resnet):
+    def __init__(self, in_channels_list):
+        """
+        in_channels_list: list of num_channel for each resnet. e.g. [3,3,3,2,2,2]
+        """
         super().__init__()
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
         self.N = cfg.CHALEARN.BATCH_SIZE
         self.T = cfg.CHALEARN.CLIP_LEN
 
-        self.resnet_list = torch.nn.ModuleList([ResnetWrapper(in_channels) for i in range(num_resnet)])
-        # [model.cuda() for model in self.resnet_list]
+        # number of input channel = 
+        self.resnet_list = torch.nn.ModuleList([ResnetWrapper(n*self.T) for n in in_channels_list])
 
         # sparsely connected network with one weight per gesture × channel
         # self.fc = torch.nn.ModuleList([Linear(self.resnet_out_channels, self.num_class) for i in range(num_resnet)])

@@ -49,8 +49,8 @@ class Trainer():
         self.max_historical_acc = 0.
         # self.save_debug_img = False  # Save batch data for debug
 
-    def _lazy_init_model(self, in_channels, num_resnet):
-        self.model = MultipleResnet(in_channels, num_resnet).cuda()
+    def _lazy_init_model(self, in_channel_list):
+        self.model = MultipleResnet(in_channel_list).cuda()
         self.model.train()
 
         self.optim = optim.Adam(self.model.parameters(), lr=5e-4)
@@ -81,8 +81,10 @@ class Trainer():
 
     def prepare_data(self, batch):
         batch = {k: x.cuda() for k, x in batch.items()}
-        image_features = [v for k, v in batch.items() if k in crop_folder_list]
-
+        # Clip C from NTCHW
+        image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
+        image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
+        image_features = image_features_RGB + image_features_UV
         y_true = batch['label']
 
         if self.save_debug_img:
@@ -90,17 +92,17 @@ class Trainer():
         return image_features, y_true
 
     def epoch(self):
-        self.model.train()
+
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
             x, y_true = self.prepare_data(batch)  # x: list of N,T,C,H,W
 
             if self.model is None:
-                N,T,C,H,W = batch['CropHTAH'].shape
                 num_resnet = len(x)
                 print(f'Construct {num_resnet} resnet channels')
-                self._lazy_init_model(in_channels=T*C, num_resnet=num_resnet)
+                num_in_channel_list = [data.size()[2] for data in x]
+                self._lazy_init_model(num_in_channel_list)
             y_pred = self.model(x)
 
             loss_tensor = self.loss(y_pred, y_true)
@@ -111,8 +113,7 @@ class Trainer():
             # if self.num_step % 100 == 0:
             #     print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
             self.num_step = self.num_step + 1 
-            break
-            
+                        
         print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
         
     
