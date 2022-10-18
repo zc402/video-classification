@@ -4,9 +4,11 @@ from torch.utils.data import Dataset
 import cv2
 import numpy as np
 import random
+import torch
 import matplotlib.pyplot as plt 
 from torchvision import transforms
 
+from config import crop_cfg
 from config.crop_cfg import crop_resize_dict, crop_folder_list
 from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
@@ -18,7 +20,6 @@ cfg = get_override_cfg()
 
 class ChalearnVideoDataset(Dataset):
 
-
     crop_resize = crop_resize_dict  # {"CropFolderName": size}
 
     def __init__(self, name_of_set:str) -> None:
@@ -28,16 +29,14 @@ class ChalearnVideoDataset(Dataset):
         # Load label list
         self.labels = get_labels(name_of_set)
         self.clip_len = cfg.CHALEARN.CLIP_LEN  # length of clip (frames)
-    
+
+        # Preprocess for both train and test
         self.preprocess = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406, 0.45, 0.45], std=[0.229, 0.224, 0.225, 0.225, 0.225]),
+            transforms.ToTensor(),  #  x/255, HWC -> CHW
+            transforms.Normalize(mean=[0.45, 0.45, 0.45, 0.45, 0.45], std=[0.225, 0.225, 0.225, 0.225, 0.225]),
         ])
 
-        # self.preprocessUV = transforms.Compose([  # Only 1 channel
-        #     transforms.ToTensor(),
-        #     transforms.Normalize(mean=[0.45], std=[0.225]),
-        # ])
+
 
     def _pad_resize_img(self, img, new_size:int):  # Pad to square and resize
         if len(img.shape) == 2:
@@ -53,9 +52,25 @@ class ChalearnVideoDataset(Dataset):
             resize_img = resize_img[:, :, np.newaxis]
         return resize_img
 
+    def _augment(self, feature_dict) -> None:
+        """
+        Data augmentation for training
+        """
+        for (folder, size) in crop_resize_dict.items():
+            padding = size // 10
+
+            augment = transforms.Compose([
+                transforms.RandomCrop(size, padding)
+            ])
+            feature_dict[folder] = augment(feature_dict[folder])
+            
+
+
+
 
     def _get_image_features(self, nsetx3x5img:Path):
         """
+        Get features (RGB UV ...) from image path
         nsetx3x5img: train/001/M_00068/00000.jpg
         """
         # size = 100  # pixels
@@ -100,13 +115,16 @@ class ChalearnVideoDataset(Dataset):
 
         nsetx3x5img_list = [Path(nsetx3x5, n) for n in selected_imgs]
         selected_features = [self._get_image_features(img) for img in nsetx3x5img_list]
+
         # Collect dicts
-        collected_features = {}
+        collected_features = {}  # TCHW
         for key in selected_features[0].keys():
             features = [f[key] for f in selected_features]
-            collected = np.stack(features)  # Stack time dim
+            collected = torch.stack(features)  # Stack time dim
             collected_features[key] = collected
         collected_features['label'] = l - 1  # Chalearn label starts from 1 while torch requires 0 
+        if self.name_of_set == "train":
+            self._augment(collected_features)
         return collected_features
 
 def _test():

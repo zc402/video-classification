@@ -27,7 +27,7 @@ class Trainer():
             self.num_workers = 0
             self.save_debug_img = True
         else:
-            self.num_workers = 10
+            self.num_workers = 12
             self.save_debug_img = False
         self.train_dataset = ChalearnVideoDataset('train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
@@ -39,9 +39,9 @@ class Trainer():
         self.loss = CrossEntropyLoss()
         self.optim = None
         self.num_step = 0
-        self.ckpt = Path(cfg.MODEL.CKPT)
+        self.ckpt_dir = Path(cfg.MODEL.CKPT_DIR)
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
-        self.save_debug_img = False  # Save batch data for debug
+        # self.save_debug_img = False  # Save batch data for debug
 
     def _lazy_init_model(self, in_channels, num_resnet):
         self.model = MultipleResnet(in_channels, num_resnet).cuda()
@@ -49,19 +49,22 @@ class Trainer():
 
         self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
 
-        if self.ckpt.exists():
+        if self.ckpt_dir.exists():
             self.load_ckpt()
         else:
             print('warning: checkpoint not found!')
 
-    def save_ckpt(self):
-        self.ckpt.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(self.model.state_dict(), self.ckpt)
-        print("Save checkpoint")
+    def save_ckpt(self, epoch=0, acc=0.0):
+        self.ckpt_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_name = f'acc-{round(acc, 2)}_e-{epoch}.ckpt'
+        ckpt_path = Path(self.ckpt_dir, ckpt_name)
+        torch.save(self.model.state_dict(), ckpt_path)
+        print(f"Checkpoint saved in {str(ckpt_path)}")
 
     def load_ckpt(self):
-        state_dict = torch.load(self.ckpt)
-        self.model.load_state_dict(state_dict)
+        # state_dict = torch.load(self.ckpt_dir)
+        # self.model.load_state_dict(state_dict)
+        pass
 
 
     def prepare_data(self, batch):
@@ -70,7 +73,7 @@ class Trainer():
         y_true = batch['label']
 
         if self.save_debug_img:
-            self.debug_show(batch['CropHTAH'])        
+            self.debug_show(batch['CropHTAH'])  # NTCHW     
         return image_features, y_true
 
     def epoch(self):
@@ -100,12 +103,12 @@ class Trainer():
     
     def train(self):
         
-        for epoch in range(20):
+        for epoch in range(40):
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
-            # self.save_ckpt()
-            self.test()
+            acc = self.test()
+            self.save_ckpt(epoch, acc)
     
     def test(self):
         self.model.eval()  # Temporally switch to eval mode
@@ -124,17 +127,20 @@ class Trainer():
         accuracy = c.sum() / len(c)
         print(f'Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
         self.model.train()  # Recover to training mode
+        return accuracy
     
-    def debug_show(self, x):
+    def debug_show(self, input):
+        debug_folder = Path('logs', 'debug')
+        debug_folder.mkdir(parents=True, exist_ok=True)
         # NTCHW
-        frame = 5
-        x = x[0][frame].cpu().numpy()
-        x = np.transpose(x, (1,2,0))  # HWC, C: BGRUV
-        U = x[:, :, 3]
-        plt.imshow(U)
-        plt.savefig(Path('debug', str(self.num_step).zfill(5)))
-        plt.close()
-        print('image saved')
+        for frame in range(0, cfg.CHALEARN.CLIP_LEN):
+            x = input[0][frame].cpu().numpy()
+            x = np.transpose(x, (1,2,0))  # HWC, C: BGRUV
+            U = x[:, :, 3]
+            plt.imshow(U)
+            plt.savefig(Path(debug_folder, f'S{str(self.num_step).zfill(2)}_T{str(frame).zfill(2)}'))
+            plt.close()
+            print('image saved')
 
 if __name__ == '__main__':
     trainer = Trainer()

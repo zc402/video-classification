@@ -17,12 +17,13 @@ _C.CHALEARN.IMG_SAMPLE_INTERVAL = 5  # Sample 1 image per 5 images
 _C.CHALEARN.PAD = '3_Pad'  # Path of padded videos
 _C.CHALEARN.IUV = '4_IUV'  # IUV from densepose
 _C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
-_C.CHALEARN.CLIP_LEN = 16  # Clip duration
+_C.CHALEARN.CLIP_LEN = 12  # Clip duration
 
 _C.DENSEPOSE = '/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose'  # base dir of apply_net.py
+_C.PYFLOW = '/home/zc/NutstoreFiles/Projects/deep-learning/pyflow'
 
 _C.MODEL = CfgNode()
-_C.MODEL.CKPT = './logs/checkpoints/model.ckpt'
+_C.MODEL.CKPT_DIR = './logs/checkpoints/'
 
 def get_cfg():
     """

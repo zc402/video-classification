@@ -45,7 +45,7 @@ class Trainer():
 
     def _lazy_init_model(self, in_channels, num_resnet):
         self.model = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
-        self.model.blocks[0].conv = Conv3d(2, 64, (1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
+        self.model.blocks[0].conv = Conv3d(5, 64, (1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
         self.model.train()
         self.model.cuda()
 
@@ -81,7 +81,7 @@ class Trainer():
             # batch: dict of NTCHW, except for labels
             
             # x, y_true = self.prepare_data(batch)  # x: list of (N,T,)C,H,W
-            x = batch['CropHTAH'][:, :, 3:].cuda()
+            x = batch['CropHTAH'].cuda()
             y_true = batch['label'].cuda()
 
             if self.model is None:
@@ -119,7 +119,7 @@ class Trainer():
         for batch in tqdm(self.test_loader):
 
             # x, y_true = self.prepare_data(batch)
-            x = batch['CropHTAH'][:, :, 3:].cuda()
+            x = batch['CropHTAH'].cuda()
             x = torch.permute(x, [0, 2, 1, 3, 4])
             y_true = batch['label'].cuda()
             with torch.no_grad():
