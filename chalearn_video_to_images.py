@@ -38,7 +38,10 @@ if __name__ == '__main__':
     img_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG)
     interval = cfg.CHALEARN.IMG_SAMPLE_INTERVAL
     
-    shutil.rmtree(img_root, ignore_errors=True)
+    if img_root.exists():
+        print("v to i: target exists")
+        exit()
+    # shutil.rmtree(img_root, ignore_errors=True)
     shutil.copytree(sample_root, img_root)  # To copy folder structure: ignore=shutil.ignore_patterns('*.avi')
 
     avi_list = glob.glob(str(Path(img_root, '**', '*.avi')), recursive=True)

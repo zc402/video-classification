@@ -148,6 +148,8 @@ def extract_crop(name_of_set):
             nsetx3x5img = Path(name_of_set, x3x5img)
             pad_img_path = Path(pad_root, name_of_set, x3x5img)
             crop_img_path = Path(crop_body_root, name_of_set, x3x5img)
+            if crop_img_path.exists():
+                continue  # Do not override
             crop_img_path.parent.mkdir(parents=True, exist_ok=True)
 
             if iuv_item['pred_boxes_XYXY'].size()[0] == 0:

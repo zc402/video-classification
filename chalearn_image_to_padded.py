@@ -42,6 +42,9 @@ if __name__ == '__main__':
     img_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG)
     pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
 
+    if pad_root.exists():
+        print("Padding: pad folder already exist")
+        exit()
     shutil.rmtree(pad_root, ignore_errors=True)
 
     pad_images(train_list, img_root, pad_root)

@@ -9,6 +9,9 @@ import numpy as np
 from config.defaults import get_override_cfg
 
 def cp(source:Path, dest:Path):
+    if dest.exists():
+        print("Sampling: video already exist")
+        return
     dest.parent.parent.mkdir(exist_ok=True)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(source, dest)
