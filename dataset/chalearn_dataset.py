@@ -63,10 +63,6 @@ class ChalearnVideoDataset(Dataset):
                 transforms.RandomCrop(size, padding)
             ])
             feature_dict[folder] = augment(feature_dict[folder])
-            
-
-
-
 
     def _get_image_features(self, nsetx3x5img:Path):
         """
@@ -92,6 +88,42 @@ class ChalearnVideoDataset(Dataset):
 
         return res_dict
 
+    def random_sampling(self, seq_len, clip_len):
+        possible_start_idx = seq_len - clip_len
+        possible_start_idx = max(0, possible_start_idx)
+        start_idx = random.randint(0, possible_start_idx)  # (randint: start/end both included)
+        clip_indices = range(start_idx, start_idx + clip_len)
+        clip_indices = [i % seq_len for i in clip_indices]  # If clip is larger than video length, then pick from start
+        return clip_indices
+    
+    def uniform_sampling(self, seq_len, clip_len):
+        clips = []
+        if(seq_len <= clip_len):
+            clips.append(self.random_sampling(seq_len, clip_len))
+        else:
+            t = 0
+            for t in range(seq_len - clip_len):
+                clip_indices = range(t, t + clip_len)
+                clips.append(clip_indices)
+        return clips
+
+    def collect_features_from_indices(self, clip_indices, img_names, img_folder, label):
+        """Collect features from indices like [5, 10, 15, ...]"""
+        selected_imgs = [img_names[i] for i in clip_indices]
+        nsetx3x5img_list = [Path(img_folder, n) for n in selected_imgs]
+        selected_features = [self._get_image_features(img) for img in nsetx3x5img_list]
+
+        # Collect dicts
+        collected_features = {}  # TCHW
+        for key in selected_features[0].keys():
+            features = [f[key] for f in selected_features]
+            collected = torch.stack(features)  # Stack time dim
+            collected_features[key] = collected
+        collected_features['label'] = label - 1  # Chalearn label starts from 1 while torch requires 0 
+        if self.name_of_set == "train":
+            self._augment(collected_features)
+        return collected_features
+
     def __len__(self):
         return len(self.labels)
 
@@ -106,25 +138,16 @@ class ChalearnVideoDataset(Dataset):
 
         # Random / Uniform sampling
         # Random sampling
-        possible_start_idx = len(img_names) - self.clip_len
-        possible_start_idx = max(0, possible_start_idx)
-        start_idx = random.randint(0, possible_start_idx)  # (randint: start/end both included)
-        clip_indices = range(start_idx, start_idx + self.clip_len)
-        clip_indices = [i % len(img_names) for i in clip_indices]  # If clip is larger than video length, then pick from start
-        selected_imgs = [img_names[i] for i in clip_indices]
-
-        nsetx3x5img_list = [Path(nsetx3x5, n) for n in selected_imgs]
-        selected_features = [self._get_image_features(img) for img in nsetx3x5img_list]
-
-        # Collect dicts
-        collected_features = {}  # TCHW
-        for key in selected_features[0].keys():
-            features = [f[key] for f in selected_features]
-            collected = torch.stack(features)  # Stack time dim
-            collected_features[key] = collected
-        collected_features['label'] = l - 1  # Chalearn label starts from 1 while torch requires 0 
+        seq_len = len(img_names)
         if self.name_of_set == "train":
-            self._augment(collected_features)
+            # Random sampling, take 1
+            clip_indices = self.random_sampling(seq_len, self.clip_len)
+            collected_features = self.collect_features_from_indices(clip_indices, img_names, nsetx3x5, l)
+        else:
+            # Uniform sampling, take multiple
+            clip_indices_list = self.uniform_sampling(seq_len, self.clip_len)
+            collected_features = [self.collect_features_from_indices(x, img_names, nsetx3x5, l) for x in clip_indices_list]
+        
         return collected_features
 
 def _test():

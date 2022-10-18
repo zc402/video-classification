@@ -7,6 +7,7 @@ from PIL import Image
 import torchvision.transforms as transforms
 import numpy as np
 import json
+import glob
 import requests
 import matplotlib.pyplot as plt
 import warnings
@@ -33,7 +34,7 @@ class Trainer():
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
 
         self.test_dataset = ChalearnVideoDataset('test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
     
         self.model = None
         self.loss = CrossEntropyLoss()
@@ -41,6 +42,7 @@ class Trainer():
         self.num_step = 0
         self.ckpt_dir = Path(cfg.MODEL.CKPT_DIR)
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
+        self.max_historical_acc = 0.
         # self.save_debug_img = False  # Save batch data for debug
 
     def _lazy_init_model(self, in_channels, num_resnet):
@@ -56,20 +58,27 @@ class Trainer():
 
     def save_ckpt(self, epoch=0, acc=0.0):
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_name = f'acc-{round(acc, 2)}_e-{epoch}.ckpt'
+        ckpt_name = f'acc{round(acc, 2)}_e{epoch}.ckpt'
         ckpt_path = Path(self.ckpt_dir, ckpt_name)
         torch.save(self.model.state_dict(), ckpt_path)
         print(f"Checkpoint saved in {str(ckpt_path)}")
 
     def load_ckpt(self):
-        # state_dict = torch.load(self.ckpt_dir)
-        # self.model.load_state_dict(state_dict)
+        ckpt_list = sorted(glob.glob(str(self.ckpt_dir / '*.ckpt')))
+        if len(ckpt_list) == 0:
+            print('warning: no checkpoint found')
+            return
+        ckpt = ckpt_list[-1]
+        print(f'loading checkpoint from {str(ckpt)}')
+        state_dict = torch.load(ckpt)
+        self.model.load_state_dict(state_dict)
         pass
 
 
     def prepare_data(self, batch):
         batch = {k: x.cuda() for k, x in batch.items()}
         image_features = [v for k, v in batch.items() if k in crop_folder_list]
+
         y_true = batch['label']
 
         if self.save_debug_img:
@@ -81,13 +90,13 @@ class Trainer():
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
-            x, y_true = self.prepare_data(batch)  # x: list of (N,T,)C,H,W
+            x, y_true = self.prepare_data(batch)  # x: list of N,T,C,H,W
 
             if self.model is None:
                 N,T,C,H,W = batch['CropHTAH'].shape
                 num_resnet = len(x)
                 print(f'Construct {num_resnet} resnet channels')
-                self._lazy_init_model(in_channels=C, num_resnet=num_resnet)
+                self._lazy_init_model(in_channels=T*C, num_resnet=num_resnet)
             y_pred = self.model(x)
 
             loss_tensor = self.loss(y_pred, y_true)
@@ -98,36 +107,51 @@ class Trainer():
             # if self.num_step % 100 == 0:
             #     print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
             self.num_step = self.num_step + 1 
+            
         print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
         
     
     def train(self):
         
-        for epoch in range(40):
+        for epoch in range(100):
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
             acc = self.test()
-            self.save_ckpt(epoch, acc)
+            
+            if acc > self.max_historical_acc:
+                self.max_historical_acc = acc
+                self.save_ckpt(epoch, acc)
     
     def test(self):
         self.model.eval()  # Temporally switch to eval mode
         print("Testing ...")
         correct_list = []
         for batch in tqdm(self.test_loader):
+            # batch is a list of uniformed samples from a single video
+            softmax_scores = []
+            y_true = None  # y_trues for each batch(1 video) are the same
+            for batch_1 in batch:
 
-            x, y_true = self.prepare_data(batch)
-            with torch.no_grad():
-                y_pred = self.model(x)  # N,class_score
-            y_pred = torch.argmax(y_pred, dim=-1)
-            correct = y_pred == y_true
-            correct = correct.cpu().numpy()
+                x, y_true = self.prepare_data(batch_1)
+                with torch.no_grad():
+                    y_pred = self.model(x)  # N,class_score
+                softmax_scores.append(y_pred)
+                # y_pred = torch.argmax(y_pred, dim=-1)
+                # correct = y_pred == y_true
+                # correct = correct.cpu().numpy()
+                # correct_list.append(correct)
+            # Mean over softmax scores (or logit, the input of softmax)
+            mean_score = torch.mean(torch.stack(softmax_scores), dim=0)
+            pred_class = torch.argmax(mean_score, dim=-1)
+            correct = pred_class == y_true
             correct_list.append(correct)
-        c = np.concatenate(correct_list, axis=0)
+        
+        c = torch.concat(correct_list, axis=0)
         accuracy = c.sum() / len(c)
-        print(f'Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
+        print(f'Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
         self.model.train()  # Recover to training mode
-        return accuracy
+        return accuracy.item()
     
     def debug_show(self, input):
         debug_folder = Path('logs', 'debug')
