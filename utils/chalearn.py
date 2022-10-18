@@ -14,4 +14,4 @@ def get_labels(name_of_set):
 
 train_list = get_labels('train')
 test_list = get_labels('test')
-# val_list = get_labels('val')
+val_list = get_labels('valid')

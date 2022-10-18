@@ -8,7 +8,7 @@ _C.CHALEARN = CfgNode()
 _C.CHALEARN.ROOT = '/home/zc/Datasets/ChaLearnIso'  # The root of all other folders
 
 _C.CHALEARN.NUM_CLASS = 249  # labels: 1~249
-_C.CHALEARN.BATCH_SIZE = 30
+_C.CHALEARN.BATCH_SIZE = 64
 _C.CHALEARN.ISO = '0_Iso'  # The folder of chalearn isogd
 _C.CHALEARN.SAMPLE = '1_Sample'  # Sample gestures from the whole dataset for debugging
 _C.CHALEARN.SAMPLE_CLASS = 20  # range of samples, 1~249

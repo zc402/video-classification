@@ -33,8 +33,12 @@ class Trainer():
         self.train_dataset = ChalearnVideoDataset('train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
 
-        self.test_dataset = ChalearnVideoDataset('test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
+        self.valid_dataset = ChalearnVideoDataset('valid')
+        self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
+
+
+        # self.test_dataset = ChalearnVideoDataset('test')
+        # self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
     
         self.model = None
         self.loss = CrossEntropyLoss()
@@ -49,7 +53,7 @@ class Trainer():
         self.model = MultipleResnet(in_channels, num_resnet).cuda()
         self.model.train()
 
-        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
+        self.optim = optim.Adam(self.model.parameters(), lr=5e-4)
 
         if self.ckpt_dir.exists():
             self.load_ckpt()
@@ -86,7 +90,7 @@ class Trainer():
         return image_features, y_true
 
     def epoch(self):
-
+        self.model.train()
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
@@ -107,6 +111,7 @@ class Trainer():
             # if self.num_step % 100 == 0:
             #     print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
             self.num_step = self.num_step + 1 
+            break
             
         print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
         
@@ -117,11 +122,30 @@ class Trainer():
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
-            acc = self.test()
+
+            acc = self.valid()
             
             if acc > self.max_historical_acc:
                 self.max_historical_acc = acc
                 self.save_ckpt(epoch, acc)
+
+    def valid(self):
+        self.model.eval()
+        print("Validating ...")
+        correct_list = []
+        for batch in tqdm(self.valid_loader):
+            x, y_true = self.prepare_data(batch)
+            with torch.no_grad():
+                y_pred = self.model(x)  # N,class_score
+                y_pred = torch.argmax(y_pred, dim=-1)
+                correct = y_pred == y_true
+                correct_list.append(correct)
+            
+        c = torch.concat(correct_list, dim=0)  # Tensor of prediction correctness
+        accuracy = c.sum() / len(c)
+        print(f'Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
+        self.model.train()
+        return accuracy.item()
     
     def test(self):
         self.model.eval()  # Temporally switch to eval mode

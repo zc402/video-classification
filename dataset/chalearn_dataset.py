@@ -139,7 +139,7 @@ class ChalearnVideoDataset(Dataset):
         # Random / Uniform sampling
         # Random sampling
         seq_len = len(img_names)
-        if self.name_of_set == "train":
+        if self.name_of_set == "train" or self.name_of_set == "valid":
             # Random sampling, take 1
             clip_indices = self.random_sampling(seq_len, self.clip_len)
             collected_features = self.collect_features_from_indices(clip_indices, img_names, nsetx3x5, l)

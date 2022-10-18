@@ -45,3 +45,4 @@ def to_iuv(cfg, name_of_set='train'):
 
 to_iuv(cfg, 'train')
 to_iuv(cfg, 'test')
+to_iuv(cfg, 'valid')

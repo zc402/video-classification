@@ -57,3 +57,7 @@ sample_a_set(train_txt, train_folder, sample_root, allow_class)
 test_txt = Path(iso_root, 'IsoGD_labels', 'test.txt')
 test_folder = Path(iso_root, 'test')
 sample_a_set(test_txt, test_folder, sample_root, allow_class)
+
+test_txt = Path(iso_root, 'IsoGD_labels', 'valid.txt')
+test_folder = Path(iso_root, 'valid')
+sample_a_set(test_txt, test_folder, sample_root, allow_class)

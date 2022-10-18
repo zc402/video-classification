@@ -174,3 +174,4 @@ def extract_crop(name_of_set):
 
 extract_crop('train')
 extract_crop('test')
+extract_crop('valid')

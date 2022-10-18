@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from config.defaults import get_override_cfg
-from utils.chalearn import train_list, test_list
+from utils.chalearn import train_list, test_list, val_list
 
 def pad_an_img(img_path:Path, target_path:Path):  # Pad and Overwrite
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,3 +46,4 @@ if __name__ == '__main__':
 
     pad_images(train_list, img_root, pad_root)
     pad_images(test_list, img_root, pad_root)
+    pad_images(val_list, img_root, pad_root)
