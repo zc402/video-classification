@@ -5,7 +5,7 @@ _C = CfgNode()
 
 _C.CHALEARN = CfgNode()
 
-_C.CHALEARN.ROOT = '/home/zc/Datasets/ChaLearnIso'  # The root of all other folders
+_C.CHALEARN.ROOT = '/media/zc/C2000Pro-1TB/ChaLearnIsoLess'  # The root of all other folders
 
 _C.CHALEARN.NUM_CLASS = 249  # labels: 1~249
 _C.CHALEARN.BATCH_SIZE = 64

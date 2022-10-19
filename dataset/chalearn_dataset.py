@@ -12,11 +12,12 @@ from config import crop_cfg
 from config.crop_cfg import crop_resize_dict, crop_folder_list
 from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
+from torch.utils.data.dataloader import default_collate
 
-import line_profiler
-import atexit
-profile = line_profiler.LineProfiler()
-atexit.register(profile.print_stats)
+# import line_profiler
+# import atexit
+# profile = line_profiler.LineProfiler()
+# atexit.register(profile.print_stats)
 
 cfg = get_override_cfg()
 
@@ -69,7 +70,6 @@ class ChalearnVideoDataset(Dataset):
             ])
             feature_dict[folder] = augment(feature_dict[folder])
 
-    @profile
     def _get_image_features(self, nsetx3x5img:Path):
         """
         Get features (RGB UV ...) from image path
@@ -155,6 +155,7 @@ class ChalearnVideoDataset(Dataset):
             # Uniform sampling, take multiple
             clip_indices_list = self.uniform_sampling(seq_len, self.clip_len)
             collected_features = [self.collect_features_from_indices(x, img_names, nsetx3x5, l) for x in clip_indices_list]
+            # collected_features = default_collate(collected_features)
         
         return collected_features
 

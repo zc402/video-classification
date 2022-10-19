@@ -14,6 +14,7 @@ import warnings
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
 from torch import optim
 from config.defaults import get_override_cfg
+from torch.utils.data.dataloader import default_collate
 cfg = get_override_cfg()
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
@@ -25,11 +26,13 @@ class Trainer():
     def __init__(self):
         debug = False
         if not debug:
-            self.num_workers = 10
+            self.num_workers = 12
             self.save_debug_img = False
         else:  # Debug
             self.num_workers = 0
             self.save_debug_img = True
+
+        self.batch_size = cfg.CHALEARN.BATCH_SIZE
             
         self.train_dataset = ChalearnVideoDataset('train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
@@ -91,7 +94,7 @@ class Trainer():
             self.debug_show(batch['CropHTAH'])  # NTCHW     
         return image_features, y_true
 
-    def epoch(self):
+    def train_epoch(self):
 
         loss_list = []
         correct_list = []
@@ -137,7 +140,7 @@ class Trainer():
         for epoch in range(100):
             print(f'Epoch {epoch}')
             self.num_step = 0
-            self.epoch()
+            self.train_epoch()
 
             # acc = self.valid()
             
@@ -171,36 +174,36 @@ class Trainer():
     def test(self):
         print("Testing ...")
         correct_list = []
-        for batch in tqdm(self.test_loader):
-            # batch is a list of uniformed samples from a single video
-            softmax_scores = []
-            y_true = None  # y_trues for each batch(1 video) are the same
-            for batch_1 in batch:
+        batch_collect = []  # Collect a batch
+        for batch in tqdm(self.test_loader):  # LNTCHW, N=1, L for list generated from dataset
+            # 
+            batch_collect.extend(batch)
+            if len(batch_collect) < self.batch_size:
+                continue
 
-                x, y_true = self.prepare_data(batch_1)
-                if self.model is None:
-                    num_in_channel_list = [data.size()[2] for data in x]
-                    self._lazy_init_model(num_in_channel_list)
+            # Batch size reached. Run a batch from batch_collect
+            batch_full = default_collate(batch_collect)
+            batch_collect = []
+            
+            batch_full = {key: val[:, 0] for key, val in batch_full.items()}   # L, (del N), T,C,H,W
+            x, y_true = self.prepare_data(batch_full)
 
-                with torch.no_grad():
-                    self.model.eval()
-                    y_pred = self.model(x)  # N,class_score
-                
-                softmax_scores.append(y_pred)
-                # y_pred = torch.argmax(y_pred, dim=-1)
-                # correct = y_pred == y_true
-                # correct = correct.cpu().numpy()
-                # correct_list.append(correct)
-            # Mean over softmax scores (or logit, the input of softmax)
-            mean_score = torch.mean(torch.stack(softmax_scores), dim=0)
-            pred_class = torch.argmax(mean_score, dim=-1)
-            correct = pred_class == y_true
+            if self.model is None:
+                num_in_channel_list = [data.size()[2] for data in x]
+                self._lazy_init_model(num_in_channel_list)
+
+            with torch.no_grad():
+                self.model.eval()
+                y_pred = self.model(x)  # N,class_score
+            
+            y_pred = torch.argmax(y_pred, dim=-1)
+            correct = y_pred == y_true
             correct_list.append(correct)
         
-        c = torch.concat(correct_list, axis=0)
+        c = torch.concat(correct_list, axis=0).cpu().numpy()
         accuracy = c.sum() / len(c)
-        print(f'Test Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
-        return accuracy.item()
+        print(f'Test Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
+        return accuracy
     
     def debug_show(self, input):
         debug_folder = Path('logs', 'debug')
@@ -217,5 +220,5 @@ class Trainer():
 
 if __name__ == '__main__':
     trainer = Trainer()
-    trainer.train()
-    # trainer.test()
+    # trainer.train()
+    trainer.test()
