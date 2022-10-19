@@ -62,13 +62,11 @@ class MultipleResnet(Module):
             # y_pred = torch.reshape(y_pred, (N, T, self.resnet_out_channels))  # N, T, C
             # y_pred = torch.mean(y_pred, dim=1)  # Average time dim for each human part channel
 
-            y_pred = self.fc(y_pred)  #N,Class
             y_pred_list.append(y_pred)
 
-        y = torch.stack(y_pred_list, dim=0)  # Part, N, Class
-        y = torch.mean(y, dim=0)  # N,Class
-        # Mean over time dim
-        # y = torch.mean(y, dim=1)  # N,Class
+        y = torch.stack(y_pred_list, dim=0)  # Part, N, Scores
+        y = torch.mean(y, dim=0)  # N,Scores
+        y = self.fc(y)  # N, class
         return y
 
     def _NTCHW_to_NCHW(self, x):

@@ -68,7 +68,7 @@ class ChalearnVideoDataset(Dataset):
                 transforms.RandomCrop(size, padding)
             ])
             feature_dict[folder] = augment(feature_dict[folder])
-            
+
     @profile
     def _get_image_features(self, nsetx3x5img:Path):
         """
@@ -113,7 +113,7 @@ class ChalearnVideoDataset(Dataset):
                 clips.append(clip_indices)
         return clips
 
-    @profile
+    # @profile
     def collect_features_from_indices(self, clip_indices, img_names, img_folder, label):
         """Collect features from indices like [5, 10, 15, ...]"""
         selected_imgs = [img_names[i] for i in clip_indices]
@@ -134,7 +134,7 @@ class ChalearnVideoDataset(Dataset):
     def __len__(self):
         return len(self.labels)
 
-    @profile
+    # @profile
     def __getitem__(self, index):
         label = self.labels[index]
         m, k, l = label

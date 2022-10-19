@@ -23,22 +23,22 @@ from config.crop_cfg import crop_folder_list
 class Trainer():
 
     def __init__(self):
-        debug = True
-        if debug:
+        debug = False
+        if not debug:
+            self.num_workers = 10
+            self.save_debug_img = False
+        else:  # Debug
             self.num_workers = 0
-            self.save_debug_img = False
-        else:
-            self.num_workers = 8
-            self.save_debug_img = False
+            self.save_debug_img = True
+            
         self.train_dataset = ChalearnVideoDataset('train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
 
         self.valid_dataset = ChalearnVideoDataset('valid')
         self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
 
-
-        # self.test_dataset = ChalearnVideoDataset('test')
-        # self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
+        self.test_dataset = ChalearnVideoDataset('test')
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
     
         self.model = None
         self.loss = CrossEntropyLoss()
@@ -51,9 +51,8 @@ class Trainer():
 
     def _lazy_init_model(self, in_channel_list):
         self.model = MultipleResnet(in_channel_list).cuda()
-        self.model.train()
 
-        self.optim = optim.Adam(self.model.parameters(), lr=5e-4)
+        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
 
         if self.ckpt_dir.exists():
             self.load_ckpt()
@@ -62,7 +61,8 @@ class Trainer():
 
     def save_ckpt(self, epoch=0, acc=0.0):
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_name = f'acc{round(acc, 2)}_e{epoch}.ckpt'
+        ckpt_name = 'acc%.02f_e%d.ckpt' % (acc, epoch)
+        # ckpt_name = f'acc{round(acc, 2)}_e{epoch}.ckpt'
         ckpt_path = Path(self.ckpt_dir, ckpt_name)
         torch.save(self.model.state_dict(), ckpt_path)
         print(f"Checkpoint saved in {str(ckpt_path)}")
@@ -93,6 +93,7 @@ class Trainer():
 
     def epoch(self):
 
+        loss_list = []
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
@@ -103,6 +104,7 @@ class Trainer():
                 print(f'Construct {num_resnet} resnet channels')
                 num_in_channel_list = [data.size()[2] for data in x]
                 self._lazy_init_model(num_in_channel_list)
+            self.model.train()
             y_pred = self.model(x)
 
             loss_tensor = self.loss(y_pred, y_true)
@@ -113,8 +115,10 @@ class Trainer():
             # if self.num_step % 100 == 0:
             #     print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
             self.num_step = self.num_step + 1 
+            loss_list.append(loss_tensor.item())
 
-        print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
+        loss_avg = np.array(loss_list).mean()
+        print(f'Step {self.num_step}, loss_avg: {round(loss_avg, 3)}')
         
     
     def train(self):
@@ -129,14 +133,17 @@ class Trainer():
             if acc > self.max_historical_acc:
                 self.max_historical_acc = acc
                 self.save_ckpt(epoch, acc)
+            
+            if (epoch + 1) % 10 == 0:
+                self.test()
 
     def valid(self):
-        self.model.eval()
         print("Validating ...")
         correct_list = []
         for batch in tqdm(self.valid_loader):
             x, y_true = self.prepare_data(batch)
             with torch.no_grad():
+                self.model.eval()
                 y_pred = self.model(x)  # N,class_score
                 y_pred = torch.argmax(y_pred, dim=-1)
                 correct = y_pred == y_true
@@ -144,12 +151,10 @@ class Trainer():
             
         c = torch.concat(correct_list, dim=0)  # Tensor of prediction correctness
         accuracy = c.sum() / len(c)
-        print(f'Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
-        self.model.train()
+        print(f'Eval Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
         return accuracy.item()
     
     def test(self):
-        self.model.eval()  # Temporally switch to eval mode
         print("Testing ...")
         correct_list = []
         for batch in tqdm(self.test_loader):
@@ -159,8 +164,14 @@ class Trainer():
             for batch_1 in batch:
 
                 x, y_true = self.prepare_data(batch_1)
+                if self.model is None:
+                    num_in_channel_list = [data.size()[2] for data in x]
+                    self._lazy_init_model(num_in_channel_list)
+
                 with torch.no_grad():
+                    self.model.eval()
                     y_pred = self.model(x)  # N,class_score
+                
                 softmax_scores.append(y_pred)
                 # y_pred = torch.argmax(y_pred, dim=-1)
                 # correct = y_pred == y_true
@@ -174,8 +185,7 @@ class Trainer():
         
         c = torch.concat(correct_list, axis=0)
         accuracy = c.sum() / len(c)
-        print(f'Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
-        self.model.train()  # Recover to training mode
+        print(f'Test Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
         return accuracy.item()
     
     def debug_show(self, input):
@@ -194,3 +204,4 @@ class Trainer():
 if __name__ == '__main__':
     trainer = Trainer()
     trainer.train()
+    # trainer.test()
