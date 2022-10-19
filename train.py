@@ -94,6 +94,7 @@ class Trainer():
     def epoch(self):
 
         loss_list = []
+        correct_list = []
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
@@ -117,8 +118,18 @@ class Trainer():
             self.num_step = self.num_step + 1 
             loss_list.append(loss_tensor.item())
 
+            # Compute train correctness
+            with torch.no_grad():
+                y_pred = torch.argmax(y_pred, dim=-1)
+                correct = y_pred == y_true
+                correct_list.append(correct)
+
         loss_avg = np.array(loss_list).mean()
-        print(f'Step {self.num_step}, loss_avg: {round(loss_avg, 3)}')
+        print(f'loss_avg: {round(loss_avg, 3)}')
+
+        c = torch.concat(correct_list, dim=0)
+        accuracy = c.sum() / len(c)
+        print(f'Train Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
         
     
     def train(self):
@@ -128,14 +139,17 @@ class Trainer():
             self.num_step = 0
             self.epoch()
 
-            acc = self.valid()
+            # acc = self.valid()
             
-            if acc > self.max_historical_acc:
-                self.max_historical_acc = acc
-                self.save_ckpt(epoch, acc)
+            # if acc > self.max_historical_acc:
+            #     self.max_historical_acc = acc
+            #     self.save_ckpt(epoch, acc)
             
-            if (epoch + 1) % 10 == 0:
-                self.test()
+            if (epoch) % 10 == 0:
+                acc = self.test()
+                if acc > self.max_historical_acc:
+                    self.max_historical_acc = acc
+                    self.save_ckpt(epoch, acc)
 
     def valid(self):
         print("Validating ...")
