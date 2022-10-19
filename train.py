@@ -23,12 +23,12 @@ from config.crop_cfg import crop_folder_list
 class Trainer():
 
     def __init__(self):
-        debug = False
+        debug = True
         if debug:
             self.num_workers = 0
-            self.save_debug_img = True
+            self.save_debug_img = False
         else:
-            self.num_workers = 12
+            self.num_workers = 8
             self.save_debug_img = False
         self.train_dataset = ChalearnVideoDataset('train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
@@ -113,7 +113,7 @@ class Trainer():
             # if self.num_step % 100 == 0:
             #     print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
             self.num_step = self.num_step + 1 
-                        
+
         print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
         
     

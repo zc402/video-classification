@@ -13,6 +13,11 @@ from config.crop_cfg import crop_resize_dict, crop_folder_list
 from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
 
+import line_profiler
+import atexit
+profile = line_profiler.LineProfiler()
+atexit.register(profile.print_stats)
+
 cfg = get_override_cfg()
 
 # The crops and corresponding pixels
@@ -63,7 +68,8 @@ class ChalearnVideoDataset(Dataset):
                 transforms.RandomCrop(size, padding)
             ])
             feature_dict[folder] = augment(feature_dict[folder])
-
+            
+    @profile
     def _get_image_features(self, nsetx3x5img:Path):
         """
         Get features (RGB UV ...) from image path
@@ -107,6 +113,7 @@ class ChalearnVideoDataset(Dataset):
                 clips.append(clip_indices)
         return clips
 
+    @profile
     def collect_features_from_indices(self, clip_indices, img_names, img_folder, label):
         """Collect features from indices like [5, 10, 15, ...]"""
         selected_imgs = [img_names[i] for i in clip_indices]
@@ -127,6 +134,7 @@ class ChalearnVideoDataset(Dataset):
     def __len__(self):
         return len(self.labels)
 
+    @profile
     def __getitem__(self, index):
         label = self.labels[index]
         m, k, l = label
