@@ -256,5 +256,5 @@ class Trainer():
 
 if __name__ == '__main__':
     trainer = Trainer()
-    # trainer.train()
-    trainer.test()
+    trainer.train()
+    # trainer.test()
