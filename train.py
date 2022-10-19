@@ -1,3 +1,4 @@
+import enum
 from pathlib import Path
 from random import random
 import torch
@@ -24,8 +25,8 @@ from config.crop_cfg import crop_folder_list
 class Trainer():
 
     def __init__(self):
-        debug = False
-        if not debug:
+        self.debug = False
+        if not self.debug:
             self.num_workers = 8
             self.save_debug_img = False
         else:  # Debug
@@ -173,10 +174,13 @@ class Trainer():
     
     def test(self):
         print("Testing ...")
-        correct_list = []
+        pred_list = []
+        true_list = []
         batch_collect = []  # Collect a batch
-        for batch in tqdm(self.test_loader):  # LNTCHW, N=1, L for list generated from dataset
-
+        video_frames = []  # [7, 5, 10, ...]
+        
+        for step, batch in enumerate(tqdm(self.test_loader)):  # LNTCHW, N=1, L for list generated from dataset
+            video_frames.append(len(batch))
             batch_collect.extend(batch)
             if len(batch_collect) < self.batch_size:
                 continue
@@ -197,10 +201,42 @@ class Trainer():
                 y_pred = self.model(x)  # N,class_score
             
             y_pred = torch.argmax(y_pred, dim=-1)
-            correct = y_pred == y_true
-            correct_list.append(correct)
+            pred_list.extend(y_pred.cpu().numpy().tolist())
+            true_list.extend(y_true.cpu().numpy().tolist())
+            
+            if self.debug and step > 10:
+                break
         
-        c = torch.concat(correct_list, axis=0).cpu().numpy()
+        # Last batch
+        if len(batch_collect) > 0:
+            batch_collect = default_collate(batch_collect)
+            batch_collect = {key: val[:, 0] for key, val in batch_collect.items()}   # L, (del N), T,C,H,W
+            x, y_true = self.prepare_data(batch_collect)
+
+            if self.model is None:
+                num_in_channel_list = [data.size()[2] for data in x]
+                self._lazy_init_model(num_in_channel_list)
+
+            with torch.no_grad():
+                self.model.eval()
+                y_pred = self.model(x)  # N,class_score
+            
+            y_pred = torch.argmax(y_pred, dim=-1)
+            pred_list.extend(y_pred.cpu().numpy().tolist())
+            true_list.extend(y_true.cpu().numpy().tolist())
+
+        # Acc 
+        
+        correct_list = []
+        for frames in video_frames:
+            preds = np.array([pred_list.pop(0) for _ in range(frames)])
+            trues = np.array([true_list.pop(0) for _ in range(frames)])
+            assert np.all(trues == trues[0])
+            most_pred = np.bincount(preds).argmax()
+            true = trues[0]
+            correct_list.append(most_pred == true)
+            
+        c = np.array(correct_list)
         accuracy = c.sum() / len(c)
         print(f'Test Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
         return accuracy
@@ -220,5 +256,5 @@ class Trainer():
 
 if __name__ == '__main__':
     trainer = Trainer()
-    trainer.train()
-    # trainer.test()
+    # trainer.train()
+    trainer.test()
