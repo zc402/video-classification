@@ -176,14 +176,14 @@ class Trainer():
         correct_list = []
         batch_collect = []  # Collect a batch
         for batch in tqdm(self.test_loader):  # LNTCHW, N=1, L for list generated from dataset
-            # 
+
             batch_collect.extend(batch)
             if len(batch_collect) < self.batch_size:
                 continue
 
             # Batch size reached. Run a batch from batch_collect
-            batch_full = default_collate(batch_collect)
-            batch_collect = []
+            batch_full = default_collate(batch_collect[:self.batch_size])
+            batch_collect = batch_collect[self.batch_size:]
             
             batch_full = {key: val[:, 0] for key, val in batch_full.items()}   # L, (del N), T,C,H,W
             x, y_true = self.prepare_data(batch_full)
