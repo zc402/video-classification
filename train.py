@@ -26,7 +26,7 @@ class Trainer():
     def __init__(self):
         debug = False
         if not debug:
-            self.num_workers = 12
+            self.num_workers = 8
             self.save_debug_img = False
         else:  # Debug
             self.num_workers = 0
@@ -150,9 +150,9 @@ class Trainer():
             
             if (epoch) % 10 == 0:
                 acc = self.test()
-                if acc > self.max_historical_acc:
-                    self.max_historical_acc = acc
-                    self.save_ckpt(epoch, acc)
+                # if acc > self.max_historical_acc:
+                self.max_historical_acc = acc
+                self.save_ckpt(epoch, acc)
 
     def valid(self):
         print("Validating ...")
@@ -220,5 +220,5 @@ class Trainer():
 
 if __name__ == '__main__':
     trainer = Trainer()
-    # trainer.train()
-    trainer.test()
+    trainer.train()
+    # trainer.test()
