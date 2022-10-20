@@ -111,7 +111,7 @@ class Trainer():
             print(f'Epoch {epoch}')
             self.num_step = 0
             self.epoch()
-            # self.save_ckpt()
+            self.save_ckpt()
             self.test()
     
     def test(self):

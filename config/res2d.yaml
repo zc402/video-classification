@@ -1,0 +1,6 @@
+CHALEARN:
+  BATCH_SIZE: 60
+  CLIP_LEN: 3
+
+MODEL:
+  NAME: 'res2d' 

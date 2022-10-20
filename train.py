@@ -14,17 +14,76 @@ import matplotlib.pyplot as plt
 import warnings
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
 from torch import optim
+from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d, Conv3d, Identity
 from config.defaults import get_override_cfg
 from torch.utils.data.dataloader import default_collate
-cfg = get_override_cfg()
+import os
+os.environ["HTTPS_PROXY"] = "http://127.0.0.1:20170"
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
 from model.multiple_resnet import MultipleResnet
 from config.crop_cfg import crop_folder_list
 
+
+
+class ModelManager():
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        model_name = cfg.MODEL.NAME
+        if model_name == "res2d":
+            self.init_model = self._init_res2d_model
+            self.prepare_data = self._prepare_res2d_data
+        elif model_name == "res3d":
+            self.init_model = self._init_res3d_model
+            self.prepare_data = self._prepare_res3d_data
+        else:
+            raise NotImplementedError()
+    
+    def init_model(self):
+        raise NotImplementedError()
+    
+    def prepare_data(self):
+        raise NotImplementedError()
+
+    # -----------res2d----------------------
+
+    def _init_res2d_model(self):
+        channels_RGB = [3 for _ in crop_folder_list]
+        channels_UV = [2 for _ in crop_folder_list]
+        channels_list = channels_RGB + channels_UV
+        model = MultipleResnet(self.cfg, channels_list).cuda()
+        return model
+
+    def _prepare_res2d_data(self, batch):
+        """Prepare data from batch to forward(x)"""
+        batch = {k: x.cuda() for k, x in batch.items()}
+        # Clip C from NTCHW
+        image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
+        image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
+        image_features = image_features_RGB + image_features_UV
+        y_true = batch['label']
+
+        # if self.save_debug_img:
+        #     self.debug_show(batch['CropHTAH'])  # NTCHW     
+        return image_features, y_true
+    
+    # -----------res3d----------------------
+    def _init_res3d_model(self):
+        model = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
+        model.blocks[0].conv = Conv3d(5, 64, (1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
+        model.cuda()
+        return model
+
+    def _prepare_res3d_data(self, batch):
+        x = batch['CropHTAH'].cuda()
+        y_true = batch['label'].cuda()
+        x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
+        return x, y_true
+
 class Trainer():
 
-    def __init__(self):
+    def __init__(self, cfg):
         self.debug = False
         if not self.debug:
             self.num_workers = 8
@@ -32,36 +91,30 @@ class Trainer():
         else:  # Debug
             self.num_workers = 0
             self.save_debug_img = True
-
+        self.cfg = cfg
         self.batch_size = cfg.CHALEARN.BATCH_SIZE
             
-        self.train_dataset = ChalearnVideoDataset('train')
+        self.train_dataset = ChalearnVideoDataset(cfg, 'train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
 
-        self.valid_dataset = ChalearnVideoDataset('valid')
+        self.valid_dataset = ChalearnVideoDataset(cfg, 'valid')
         self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
 
-        self.test_dataset = ChalearnVideoDataset('test')
+        self.test_dataset = ChalearnVideoDataset(cfg, 'test')
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
-    
-        self.model = None
+
+        self.mm = ModelManager(cfg)
+        self.model = self.mm.init_model()
         self.loss = CrossEntropyLoss()
-        self.optim = None
+        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
+        
         self.num_step = 0
-        self.ckpt_dir = Path(cfg.MODEL.CKPT_DIR)
+        self.ckpt_dir = Path(cfg.MODEL.CKPT_DIR, cfg.MODEL.NAME)
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
         self.max_historical_acc = 0.
-        # self.save_debug_img = False  # Save batch data for debug
 
-    def _lazy_init_model(self, in_channel_list):
-        self.model = MultipleResnet(in_channel_list).cuda()
-
-        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
-
-        if self.ckpt_dir.exists():
-            self.load_ckpt()
-        else:
-            print('warning: checkpoint not found!')
+        self.load_ckpt()
+        
 
     def save_ckpt(self, epoch=0, acc=0.0):
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -82,18 +135,17 @@ class Trainer():
         self.model.load_state_dict(state_dict)
         pass
 
+    # def prepare_data(self, batch):
+    #     batch = {k: x.cuda() for k, x in batch.items()}
+    #     # Clip C from NTCHW
+    #     image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
+    #     image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
+    #     image_features = image_features_RGB + image_features_UV
+    #     y_true = batch['label']
 
-    def prepare_data(self, batch):
-        batch = {k: x.cuda() for k, x in batch.items()}
-        # Clip C from NTCHW
-        image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
-        image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
-        image_features = image_features_RGB + image_features_UV
-        y_true = batch['label']
-
-        if self.save_debug_img:
-            self.debug_show(batch['CropHTAH'])  # NTCHW     
-        return image_features, y_true
+    #     if self.save_debug_img:
+    #         self.debug_show(batch['CropHTAH'])  # NTCHW     
+    #     return image_features, y_true
 
     def train_epoch(self):
 
@@ -102,7 +154,7 @@ class Trainer():
         for batch in tqdm(self.train_loader):
             # batch: dict of NTCHW, except for labels
             
-            x, y_true = self.prepare_data(batch)  # x: list of N,T,C,H,W
+            x, y_true = self.mm.prepare_data(batch)  # x: list of N,T,C,H,W
 
             if self.model is None:
                 num_resnet = len(x)
@@ -127,6 +179,9 @@ class Trainer():
                 y_pred = torch.argmax(y_pred, dim=-1)
                 correct = y_pred == y_true
                 correct_list.append(correct)
+            
+            if self.debug:
+                break
 
         loss_avg = np.array(loss_list).mean()
         print(f'loss_avg: {round(loss_avg, 3)}')
@@ -149,28 +204,28 @@ class Trainer():
             #     self.max_historical_acc = acc
             #     self.save_ckpt(epoch, acc)
             
-            if (epoch) % 10 == 0:
+            if (epoch) % 5 == 0:
                 acc = self.test()
                 # if acc > self.max_historical_acc:
                 self.max_historical_acc = acc
                 self.save_ckpt(epoch, acc)
 
-    def valid(self):
-        print("Validating ...")
-        correct_list = []
-        for batch in tqdm(self.valid_loader):
-            x, y_true = self.prepare_data(batch)
-            with torch.no_grad():
-                self.model.eval()
-                y_pred = self.model(x)  # N,class_score
-                y_pred = torch.argmax(y_pred, dim=-1)
-                correct = y_pred == y_true
-                correct_list.append(correct)
+    # def valid(self):
+    #     print("Validating ...")
+    #     correct_list = []
+    #     for batch in tqdm(self.valid_loader):
+    #         x, y_true = self.prepare_data(batch)
+    #         with torch.no_grad():
+    #             self.model.eval()
+    #             y_pred = self.model(x)  # N,class_score
+    #             y_pred = torch.argmax(y_pred, dim=-1)
+    #             correct = y_pred == y_true
+    #             correct_list.append(correct)
             
-        c = torch.concat(correct_list, dim=0)  # Tensor of prediction correctness
-        accuracy = c.sum() / len(c)
-        print(f'Eval Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
-        return accuracy.item()
+    #     c = torch.concat(correct_list, dim=0)  # Tensor of prediction correctness
+    #     accuracy = c.sum() / len(c)
+    #     print(f'Eval Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
+    #     return accuracy.item()
     
     def test(self):
         print("Testing ...")
@@ -178,6 +233,19 @@ class Trainer():
         true_list = []
         batch_collect = []  # Collect a batch
         video_frames = []  # [7, 5, 10, ...]
+
+        def test_batch(collect):
+            
+            collect = {key: val[:, 0] for key, val in collect.items()}   # L, (del N), T,C,H,W
+            x, y_true = self.mm.prepare_data(collect)
+
+            with torch.no_grad():
+                self.model.eval()
+                y_pred = self.model(x)  # N,class_score
+            
+            y_pred = torch.argmax(y_pred, dim=-1)
+            pred_list.extend(y_pred.cpu().numpy().tolist())
+            true_list.extend(y_true.cpu().numpy().tolist())
         
         for step, batch in enumerate(tqdm(self.test_loader)):  # LNTCHW, N=1, L for list generated from dataset
             video_frames.append(len(batch))
@@ -189,20 +257,18 @@ class Trainer():
             batch_full = default_collate(batch_collect[:self.batch_size])
             batch_collect = batch_collect[self.batch_size:]
             
-            batch_full = {key: val[:, 0] for key, val in batch_full.items()}   # L, (del N), T,C,H,W
-            x, y_true = self.prepare_data(batch_full)
+            test_batch(batch_full)
 
-            if self.model is None:
-                num_in_channel_list = [data.size()[2] for data in x]
-                self._lazy_init_model(num_in_channel_list)
+            # batch_full = {key: val[:, 0] for key, val in batch_full.items()}   # L, (del N), T,C,H,W
+            # x, y_true = self.mm.prepare_data(batch_full)
 
-            with torch.no_grad():
-                self.model.eval()
-                y_pred = self.model(x)  # N,class_score
+            # with torch.no_grad():
+            #     self.model.eval()
+            #     y_pred = self.model(x)  # N,class_score
             
-            y_pred = torch.argmax(y_pred, dim=-1)
-            pred_list.extend(y_pred.cpu().numpy().tolist())
-            true_list.extend(y_true.cpu().numpy().tolist())
+            # y_pred = torch.argmax(y_pred, dim=-1)
+            # pred_list.extend(y_pred.cpu().numpy().tolist())
+            # true_list.extend(y_true.cpu().numpy().tolist())
             
             if self.debug and step > 10:
                 break
@@ -210,21 +276,7 @@ class Trainer():
         # Last batch
         if len(batch_collect) > 0:
             batch_collect = default_collate(batch_collect)
-            batch_collect = {key: val[:, 0] for key, val in batch_collect.items()}   # L, (del N), T,C,H,W
-            x, y_true = self.prepare_data(batch_collect)
-
-            if self.model is None:
-                num_in_channel_list = [data.size()[2] for data in x]
-                self._lazy_init_model(num_in_channel_list)
-
-            with torch.no_grad():
-                self.model.eval()
-                y_pred = self.model(x)  # N,class_score
-            
-            y_pred = torch.argmax(y_pred, dim=-1)
-            pred_list.extend(y_pred.cpu().numpy().tolist())
-            true_list.extend(y_true.cpu().numpy().tolist())
-
+            test_batch(batch_collect)
         # Acc 
         
         correct_list = []
@@ -245,7 +297,7 @@ class Trainer():
         debug_folder = Path('logs', 'debug')
         debug_folder.mkdir(parents=True, exist_ok=True)
         # NTCHW
-        for frame in range(0, cfg.CHALEARN.CLIP_LEN):
+        for frame in range(0, train_cfg.CHALEARN.CLIP_LEN):
             x = input[0][frame].cpu().numpy()
             x = np.transpose(x, (1,2,0))  # HWC, C: BGRUV
             U = x[:, :, 3]
@@ -255,6 +307,8 @@ class Trainer():
             print('image saved')
 
 if __name__ == '__main__':
-    trainer = Trainer()
+    train_cfg = get_override_cfg()
+    train_cfg.merge_from_file('config/res3d.yaml')
+    trainer = Trainer(train_cfg)
     trainer.train()
     # trainer.test()

@@ -16,7 +16,7 @@ from config.defaults import get_override_cfg
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
 
-cfg = get_override_cfg()
+# cfg = get_override_cfg()
 
 class ResnetWrapper(Module):
 
@@ -34,13 +34,12 @@ class ResnetWrapper(Module):
 
 class MultipleResnet(Module):
 
-    def __init__(self, in_channels_list):
+    def __init__(self, cfg, in_channels_list):
         """
         in_channels_list: list of num_channel for each resnet. e.g. [3,3,3,2,2,2]
         """
         super().__init__()
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
-        self.N = cfg.CHALEARN.BATCH_SIZE
         self.T = cfg.CHALEARN.CLIP_LEN
 
         # number of input channel = 
@@ -69,7 +68,6 @@ class MultipleResnet(Module):
         # y = self.fc(y)  # N, class
         return y
 
-    def _NTCHW_to_NCHW(self, x):
-        N,T,C,H,W = x.size()
-        x = torch.reshape(x, (N*T, C,H,W))
-        return x
+
+    
+    

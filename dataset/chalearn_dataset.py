@@ -10,7 +10,6 @@ from torchvision import transforms
 
 from config import crop_cfg
 from config.crop_cfg import crop_resize_dict, crop_folder_list
-from config.defaults import get_override_cfg
 from utils.chalearn import get_labels, train_list, test_list
 from torch.utils.data.dataloader import default_collate
 
@@ -19,7 +18,7 @@ from torch.utils.data.dataloader import default_collate
 # profile = line_profiler.LineProfiler()
 # atexit.register(profile.print_stats)
 
-cfg = get_override_cfg()
+# cfg = get_override_cfg()
 
 # The crops and corresponding pixels
 
@@ -28,9 +27,10 @@ class ChalearnVideoDataset(Dataset):
 
     crop_resize = crop_resize_dict  # {"CropFolderName": size}
 
-    def __init__(self, name_of_set:str) -> None:
+    def __init__(self, cfg, name_of_set:str) -> None:
         """name_of_set: train test val"""
         self.name_of_set = name_of_set
+        self.cfg = cfg
 
         # Load label list
         self.labels = get_labels(name_of_set)
@@ -80,7 +80,7 @@ class ChalearnVideoDataset(Dataset):
         res_dict = {key: None for key in crop_folder_list}
         for crop_folder_name in res_dict.keys():
             size = self.crop_resize[crop_folder_name]
-            frame_path = Path(cfg.CHALEARN.ROOT, crop_folder_name, nsetx3x5img)
+            frame_path = Path(self.cfg.CHALEARN.ROOT, crop_folder_name, nsetx3x5img)
             if frame_path.exists():
                 img = cv2.imread(str(frame_path))
                 img_U = cv2.imread(str(Path(frame_path.parent, 'U_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
@@ -139,7 +139,7 @@ class ChalearnVideoDataset(Dataset):
         label = self.labels[index]
         m, k, l = label
         nsetx3x5 = Path(m).parent / Path(m).stem  # train/001/M_00068/
-        avi_path = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.IMG, nsetx3x5)  # root/Images/train/001/M_00068/
+        avi_path = Path(self.cfg.CHALEARN.ROOT, self.cfg.CHALEARN.IMG, nsetx3x5)  # root/Images/train/001/M_00068/
         img_files = glob(str(avi_path / "*"))  # Images from 1 folder
         img_files = sorted(img_files)
         img_names = [Path(p).name for p in img_files]  # 00000.jpg 00005.jpg ...
