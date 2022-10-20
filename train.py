@@ -301,5 +301,5 @@ if __name__ == '__main__':
     train_cfg = get_override_cfg()
     train_cfg.merge_from_file('config/res3d.yaml')
     trainer = Trainer(train_cfg)
-    # trainer.train()
-    trainer.test()
+    trainer.train()
+    # trainer.test()
