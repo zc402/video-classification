@@ -25,7 +25,7 @@ from dataset.chalearn_dataset import ChalearnVideoDataset
 from model.multiple_resnet import MultipleResnet
 from config.crop_cfg import crop_folder_list
 
-
+torch.multiprocessing.set_sharing_strategy('file_system')  # Solve the "received 0 items of ancdata" error
 
 class ModelManager():
 
