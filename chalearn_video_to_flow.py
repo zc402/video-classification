@@ -1,6 +1,7 @@
 """
 Convert videos to flows
 """
+from fileinput import filename
 import glob
 import os
 import cv2
@@ -12,6 +13,7 @@ from config.defaults import get_override_cfg
 import numpy as np
 from multiprocessing import Pool
 import sys
+from numpy.linalg import norm 
 
 def flow(im1, im2):
 
@@ -38,10 +40,12 @@ def flow(im1, im2):
 def video2flow(video_relative_path, video_root, flow_root):
     # relative path: train/xxx/xxxxx.avi
     video_path = Path(video_root, video_relative_path)  
-    flow_path = Path(flow_root, video_relative_path)  
-    
+    flow_folder = Path(flow_root, video_relative_path)
+    flow_folder = Path(str(flow_folder).replace('.avi', ''))
+    flow_folder.mkdir(parents=True, exist_ok=True)
+
     cap = cv2.VideoCapture(str(video_path))
-    flow_list = []
+    flow_list = [np.zeros((60, 80, 2))]
     im1 = None
     im2 = None
     while cap.isOpened():
@@ -61,19 +65,24 @@ def video2flow(video_relative_path, video_root, flow_root):
             im2 = None
 
         flow_list.append(y)
-    flow_data = np.array(flow_list)
-    # Range of optical flow: [-5, 5]
-    # print(np.array(flow_list).max(), np.array(flow_list).min())
-    # for f in flow_list:
-    #     img = ((f[:, :, 0] + 5) / 10 *255).astype(np.uint8)
-    #     cv2.imshow('win', img)
-    #     cv2.waitKey(100)
-    flow_folder = flow_path.parent
-    flow_folder.mkdir(parents=True, exist_ok=True)
-    flow_name = flow_path.stem + '.npy'
-    new_flow_path = Path(flow_folder, flow_name)   #  /111111.npy
-    np.save(new_flow_path, flow_data)
+    
+    for frame_num, f in enumerate(flow_list):
+        # Range of optical flow: [-5, 5]
+        
+        f01 = (f + 5) / 10  # [-5, 5] -> [0, 1]
+        M_norm = norm(f01, ord=2, axis=2)  # HWC
+        M_norm = M_norm / np.sqrt(2)  # [0, 1.414] -> [0, 1.]
+        rgb = np.concatenate([f01, M_norm[:, :, np.newaxis]], axis=2)
+        rgb = rgb * 255.
+        rgb = rgb.astype(np.uint8)
 
+        # cv2.imshow('win', cv2.resize(rgb, dsize=None, fx=4, fy=4))
+        # cv2.waitKey(100)
+
+        file_name = str(frame_num).zfill(5) + '.jpg'
+        jpg_path = Path(flow_folder, file_name)
+        
+        cv2.imwrite(str(jpg_path), rgb)
 
 cfg = get_override_cfg()
 
@@ -93,6 +102,8 @@ for video in tqdm(avi_list):
     name_of_set = video.parent.parent.name
     video_relative_path = Path(name_of_set, xxx, name)
     param_list.append((video_relative_path, sample_root, flow_root))
-    # video2flow(video_relative_path, sample_root, flow_root)
+
 pool = Pool(16)
 pool.map(v2f_wrapper, param_list)
+# for p in param_list:
+#     v2f_wrapper(p)
