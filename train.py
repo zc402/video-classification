@@ -19,6 +19,7 @@ from config.defaults import get_override_cfg
 from torch.utils.data.dataloader import default_collate
 import os
 os.environ["HTTPS_PROXY"] = "http://127.0.0.1:20170"
+os.environ["HTTP_PROXY"] = "http://127.0.0.1:20170"
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
 from model.multiple_resnet import MultipleResnet
@@ -101,7 +102,7 @@ class Trainer():
         self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
 
         self.test_dataset = ChalearnVideoDataset(cfg, 'test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, drop_last=True, num_workers=self.num_workers)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=10, shuffle=False, drop_last=True, num_workers=self.num_workers, collate_fn=lambda x:x)
 
         self.mm = ModelManager(cfg)
         self.model = self.mm.init_model()
@@ -236,7 +237,6 @@ class Trainer():
 
         def test_batch(collect):
             
-            collect = {key: val[:, 0] for key, val in collect.items()}   # L, (del N), T,C,H,W
             x, y_true = self.mm.prepare_data(collect)
 
             with torch.no_grad():
@@ -248,27 +248,18 @@ class Trainer():
             true_list.extend(y_true.cpu().numpy().tolist())
         
         for step, batch in enumerate(tqdm(self.test_loader)):  # LNTCHW, N=1, L for list generated from dataset
-            video_frames.append(len(batch))
-            batch_collect.extend(batch)
+            # batch: [[TCHW]]
+            [video_frames.append(len(b)) for b in batch]  # b: N,TCHW, N is length of a video - clip_len
+            [batch_collect.extend(b) for b in batch]  # batch_collect: N,TCHW
             if len(batch_collect) < self.batch_size:
                 continue
-
-            # Batch size reached. Run a batch from batch_collect
-            batch_full = default_collate(batch_collect[:self.batch_size])
-            batch_collect = batch_collect[self.batch_size:]
             
-            test_batch(batch_full)
-
-            # batch_full = {key: val[:, 0] for key, val in batch_full.items()}   # L, (del N), T,C,H,W
-            # x, y_true = self.mm.prepare_data(batch_full)
-
-            # with torch.no_grad():
-            #     self.model.eval()
-            #     y_pred = self.model(x)  # N,class_score
-            
-            # y_pred = torch.argmax(y_pred, dim=-1)
-            # pred_list.extend(y_pred.cpu().numpy().tolist())
-            # true_list.extend(y_true.cpu().numpy().tolist())
+            while len(batch_collect) > self.batch_size:
+                # Batch size reached. Run a batch from batch_collect
+                batch_full = default_collate(batch_collect[:self.batch_size])
+                batch_collect = batch_collect[self.batch_size:]
+                
+                test_batch(batch_full)
             
             if self.debug and step > 10:
                 break
@@ -310,5 +301,5 @@ if __name__ == '__main__':
     train_cfg = get_override_cfg()
     train_cfg.merge_from_file('config/res3d.yaml')
     trainer = Trainer(train_cfg)
-    trainer.train()
-    # trainer.test()
+    # trainer.train()
+    trainer.test()
