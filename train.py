@@ -205,7 +205,7 @@ class Trainer():
             #     self.max_historical_acc = acc
             #     self.save_ckpt(epoch, acc)
             
-            if (epoch) % 5 == 0:
+            if (epoch) % 2 == 0:
                 acc = self.test()
                 # if acc > self.max_historical_acc:
                 self.max_historical_acc = acc
