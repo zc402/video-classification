@@ -45,14 +45,15 @@ def video2flow(video_relative_path, video_root, flow_root):
     flow_folder.mkdir(parents=True, exist_ok=True)
 
     cap = cv2.VideoCapture(str(video_path))
-    flow_list = [np.zeros((60, 80, 2))]
+    resize_w, resize_h = (80, 60)
+    flow_list = [np.zeros((resize_w, resize_h, 2))]
     im1 = None
     im2 = None
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        frame = cv2.resize(frame, (60, 80))
+        frame = cv2.resize(frame, (resize_w, resize_h))
         if im1 is None:
             im1 = frame  # Frist frame
             y = np.zeros((im1.shape[0], im1.shape[1], 2))

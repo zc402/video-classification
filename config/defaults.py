@@ -27,6 +27,7 @@ _C.PYFLOW = '/home/zc/NutstoreFiles/Projects/deep-learning/pyflow'
 _C.MODEL = CfgNode()
 _C.MODEL.NAME = 'model_name'
 _C.MODEL.CKPT_DIR = './logs/checkpoints/'
+_C.MODEL.R3D_INPUT = 'CropHTAH'  # Input for c3d model
 
 def get_cfg():
     """

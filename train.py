@@ -77,7 +77,7 @@ class ModelManager():
         return model
 
     def _prepare_res3d_data(self, batch):
-        x = batch['CropHTAH'].cuda()
+        x = batch[self.cfg.MODEL.R3D_INPUT].cuda()
         y_true = batch['label'].cuda()
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         return x, y_true
