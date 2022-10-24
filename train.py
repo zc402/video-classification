@@ -103,7 +103,7 @@ class ModelManager():
         x = batch['CropHTAH'].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         x_rgb = x[:, 0:3]
-        x_uv = x[:, 3:5]  # 3:5
+        x_uv = x[:, 0:5]  # 3:5
         
         y_true = batch['label'].cuda()
         return [x_uv, x_rgb ], y_true
