@@ -89,7 +89,7 @@ class ModelManager():
     # ----------slow_fast------------------
     def _init_slowfast_model(self):
         model = create_slowfast(
-            model_depth=18,
+            model_depth=50,
             model_num_class=self.cfg.CHALEARN.NUM_CLASS,
             input_channels=(5, 3),
             stem_dim_outs=(64, 8),
