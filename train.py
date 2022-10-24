@@ -12,6 +12,7 @@ import glob
 import requests
 import matplotlib.pyplot as plt
 import warnings
+from pytorchvideocopy.models.slowfast import create_slowfast
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
 from torch import optim
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d, Conv3d, Identity
@@ -38,6 +39,9 @@ class ModelManager():
         elif model_name == "res3d":
             self.init_model = self._init_res3d_model
             self.prepare_data = self._prepare_res3d_data
+        elif model_name == "slowfast":
+            self.init_model = self._init_slowfast_model
+            self.prepare_data = self._prepare_slowfast_data
         else:
             raise NotImplementedError()
     
@@ -81,6 +85,26 @@ class ModelManager():
         y_true = batch['label'].cuda()
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         return x, y_true
+    
+    # ----------slow_fast------------------
+    def _init_slowfast_model(self):
+        model = create_slowfast(
+            model_num_class=self.cfg.CHALEARN.NUM_CLASS,
+            input_channels=(3, 2),
+            slowfast_fusion_conv_stride=(1,1,1),
+            head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1)),
+        )
+        model.cuda()
+        return model
+    
+    def _prepare_slowfast_data(self, batch):
+        x = batch['CropHTAH'].cuda()  # NTCHW
+        x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
+        x_rgb = x[:, 0:3]
+        x_uv = x[:, 3:5]
+        
+        y_true = batch['label'].cuda()
+        return [x_rgb, x_uv], y_true
 
 class Trainer():
 
@@ -157,11 +181,6 @@ class Trainer():
             
             x, y_true = self.mm.prepare_data(batch)  # x: list of N,T,C,H,W
 
-            if self.model is None:
-                num_resnet = len(x)
-                print(f'Construct {num_resnet} resnet channels')
-                num_in_channel_list = [data.size()[2] for data in x]
-                self._lazy_init_model(num_in_channel_list)
             self.model.train()
             y_pred = self.model(x)
 
@@ -299,7 +318,7 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_override_cfg()
-    train_cfg.merge_from_file('config/res3d.yaml')
+    train_cfg.merge_from_file('config/slowfast.yaml')
     trainer = Trainer(train_cfg)
     trainer.train()
     # trainer.test()

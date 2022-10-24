@@ -1,0 +1,6 @@
+CHALEARN:
+  BATCH_SIZE: 15
+  CLIP_LEN: 12
+
+MODEL:
+  NAME: 'slowfast' 
