@@ -70,6 +70,7 @@ class ChalearnVideoDataset(Dataset):
             ])
             feature_dict[folder] = augment(feature_dict[folder])
 
+
     def _get_image_features(self, nsetx3x5img:Path):
         """
         Get features (RGB UV ...) from image path

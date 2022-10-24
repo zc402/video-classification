@@ -8,9 +8,9 @@ torso = [1, 2]
 head = [23, 24]
 
 # resize pixels
-sm = 50
-md = 100
-lg = 200
+sm = 64
+md = 128
+lg = 256
 
 properties = [
     (lhand, 'CropLHand', sm),

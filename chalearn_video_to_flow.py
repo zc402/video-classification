@@ -104,7 +104,7 @@ for video in tqdm(avi_list):
     video_relative_path = Path(name_of_set, xxx, name)
     param_list.append((video_relative_path, sample_root, flow_root))
 
-pool = Pool(16)
-pool.map(v2f_wrapper, param_list)
-# for p in param_list:
-#     v2f_wrapper(p)
+# pool = Pool(16)
+# pool.map(v2f_wrapper, param_list)
+for p in param_list:
+    v2f_wrapper(p)

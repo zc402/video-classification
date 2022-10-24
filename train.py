@@ -12,7 +12,7 @@ import glob
 import requests
 import matplotlib.pyplot as plt
 import warnings
-from pytorchvideocopy.models.slowfast import create_slowfast
+from pytorchvideo.models.slowfast import create_slowfast
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
 from torch import optim
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d, Conv3d, Identity
@@ -89,8 +89,10 @@ class ModelManager():
     # ----------slow_fast------------------
     def _init_slowfast_model(self):
         model = create_slowfast(
+            model_depth=18,
             model_num_class=self.cfg.CHALEARN.NUM_CLASS,
-            input_channels=(3, 2),
+            input_channels=(5, 3),
+            stem_dim_outs=(64, 8),
             slowfast_fusion_conv_stride=(1,1,1),
             head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1)),
         )
@@ -101,10 +103,10 @@ class ModelManager():
         x = batch['CropHTAH'].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         x_rgb = x[:, 0:3]
-        x_uv = x[:, 3:5]
+        x_uv = x[:, 3:5]  # 3:5
         
         y_true = batch['label'].cuda()
-        return [x_rgb, x_uv], y_true
+        return [x_uv, x_rgb ], y_true
 
 class Trainer():
 
@@ -300,7 +302,7 @@ class Trainer():
             
         c = np.array(correct_list)
         accuracy = c.sum() / len(c)
-        print(f'Test Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
+        print(f'!! Test Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
         return accuracy
     
     def debug_show(self, input):

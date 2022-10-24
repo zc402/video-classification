@@ -10,7 +10,17 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": false,
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+			"env": {"PYTHONPATH": "${cwd}"}
+        },
+        {
+            "name": "train.py",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
             "cwd": "${workspaceFolder}",
 			"env": {"PYTHONPATH": "${cwd}"}
         }

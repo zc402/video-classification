@@ -34,6 +34,30 @@ def crop_body(img_path, target_path, bbox):
     cropped = img[y1:y2, x1:x2, :]
     cv2.imwrite(str(target_path), cropped)
 
+def load_flow(body_img_path):
+    img_num = int(body_img_path.stem)
+    flow_start = img_num - cfg.CHALEARN.IMG_SAMPLE_INTERVAL+1  
+    flow_end = img_num
+    flow_num = list(range(flow_start, flow_end + 1))  # -4,...,0
+    flow_num = [max(i, 0) for i in flow_num]
+    flow_name = [str(i).zfill(5) for i in flow_num]
+    flow_name = [i+'.jpg' for i in flow_name]
+
+    M_XXXXX, XXX, name_set = body_img_path.parts[-1], body_img_path.parts[-2], body_img_path.parts[-3]
+    base = cfg.CHALEARN.FLOWRGB
+    flow_folder = Path(base, name_set, XXX, M_XXXXX)
+    flow_compact = []
+    for name in flow_name:  # 00001.jpg,  ...,  00005.jpg
+        flow_path = Path(flow_folder, name)
+        anchor_path = Path(flow_folder, flow_name[-1])  # Should always exist
+        if flow_path.exists():
+            flow = cv2.imread(str(flow_path))
+        else:
+            flow = cv2.imread(str(anchor_path))
+        flow_compact.append(flow)
+    
+    return flow_compact
+    
 
 def crop_body_parts(body_img_path, target_relative_path, iuv):
     """
@@ -87,10 +111,10 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         x,y,w,h = largest_xywh
         if w < 15 or h < 15:
             return  # Discard images with abnormal small size
-        # Image
+        # ----------Image
         cropped = img[y:y+h, x:x+w, :]
         cv2.imwrite(str(target_path), cropped)
-        # UV
+        # ----------UV
         U_crop = UV[0][y:y+h, x:x+w] * 256.   # 0~1 f -> 0~255 f
         V_crop = UV[1][y:y+h, x:x+w] * 256.
 
@@ -101,6 +125,21 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         V_path = target_path.parent / ('V_' + target_path.name)
         cv2.imwrite(str(U_path), U_crop)
         cv2.imwrite(str(V_path), V_crop)
+
+        # ----------Flow
+        # xy are the box results of padded image. recover to that of normal image
+        nx = x - (320//2)
+        ny = y - (240//2)
+        assert nx > 0 and ny > 0
+        # Flows are 1/4 of the image size.
+        nnx = nx // 4
+        nny = ny // 4
+        nnw = w // 4
+        nnh = h // 4
+        flow = load_flow(body_img_path)
+
+
+
 
     [_crop_part(*args) for args in crop_part_args]  # args: (torso + larm, 'CropTorsoLArm')
     # lhand = [4]
