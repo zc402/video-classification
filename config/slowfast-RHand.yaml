@@ -3,6 +3,6 @@ CHALEARN:
   CLIP_LEN: 8
 
 MODEL:
-  NAME: 'slowfast-LHand' 
-  R3D_INPUT: 'CropLHand'
+  NAME: 'slowfast-RHand' 
+  R3D_INPUT: 'CropRHand'
   LR: 5e-4

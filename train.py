@@ -161,8 +161,12 @@ class Trainer():
     def load_ckpt(self):
         ckpt_list = sorted(glob.glob(str(self.ckpt_dir / '*.ckpt')))
         if len(ckpt_list) == 0:
-            print('warning: no checkpoint found')
-            return
+            print('warning: no checkpoint found, try using HTAH ckeckpoint')
+            # Use HTAH checkpoint:
+            ckpt_list = sorted(glob.glob(str(Path(self.cfg.MODEL.CKPT_DIR, 'slowfast-HTAH', '*.ckpt'))))
+            if len(ckpt_list) == 0:
+                print('warning: no HTAH checkpoint found')
+                return
         ckpt = ckpt_list[-1]
         print(f'loading checkpoint from {str(ckpt)}')
         state_dict = torch.load(ckpt)
@@ -315,9 +319,9 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_override_cfg()
-    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm']
+    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
 
-    train_cfg.merge_from_file(Path('config', 'slowfast-RHandArm' + '.yaml'))
+    train_cfg.merge_from_file(Path('config', 'slowfast-RHand' + '.yaml'))
     trainer = Trainer(train_cfg)
     trainer.train()
     # trainer.test()
