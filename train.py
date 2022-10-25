@@ -89,24 +89,26 @@ class ModelManager():
     # ----------slow_fast------------------
     def _init_slowfast_model(self):
         model = create_slowfast(
-            model_depth=18,
+            model_depth=50,
             model_num_class=self.cfg.CHALEARN.NUM_CLASS,
             input_channels=(5, 3),
             stem_dim_outs=(64, 8),
             slowfast_fusion_conv_stride=(1,1,1),
             head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1)),
         )
+        pretrained = torch.load('logs/SLOWFAST_8x8_R50.pyth')
+        model.load_state_dict(pretrained, strict=False)
         model.cuda()
         return model
     
     def _prepare_slowfast_data(self, batch):
         x = batch['CropHTAH'].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        x_rgb = x[:, 0:3]
-        x_uv = x[:, 0:5]  # 3:5
+        x_rgbuv = x[:, 0:5]
+        x_flow = x[:, 5:8]
         
         y_true = batch['label'].cuda()
-        return [x_uv, x_rgb ], y_true
+        return [x_rgbuv, x_flow ], y_true
 
 class Trainer():
 

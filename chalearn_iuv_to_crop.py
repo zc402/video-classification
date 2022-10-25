@@ -97,8 +97,8 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
     def _crop_part(part_indices, save_name):
 
         target_path = Path(cfg.CHALEARN.ROOT, save_name, target_relative_path)
-        if Path(target_path).exists():
-            return  # Do not overwrite
+        # if Path(target_path).exists():
+        #     return  # Do not overwrite
         target_path.parent.mkdir(parents=True, exist_ok=True)
         # mask = (I == part_indices)
         mask = np.zeros_like(I)
@@ -152,12 +152,11 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         cv2.imwrite(str(V_path), V_crop)
 
         # ----------Flow
-        # xy are the box results of padded image. recover to that of normal image
-        # nx = x - (320//2)
-        # ny = y - (240//2)
-        # assert nx > 0 and ny > 0
-
-
+        flow_img_path = Path(body_img_path.parent, 'F_' + body_img_path.name)
+        flow = cv2.imread(str(flow_img_path))
+        flow_cropped = flow[y:y+h, x:x+w, :]
+        flow_target_path = target_path.parent / ('F_' + target_path.name)
+        cv2.imwrite(str(flow_target_path), flow_cropped)
 
     [_crop_part(*args) for args in crop_part_args]  # args: (torso + larm, 'CropTorsoLArm')
     # lhand = [4]

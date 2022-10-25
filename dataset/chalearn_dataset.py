@@ -31,6 +31,7 @@ class ChalearnVideoDataset(Dataset):
         """name_of_set: train test val"""
         self.name_of_set = name_of_set
         self.cfg = cfg
+        self.num_data_modality_channels = 8
 
         # Load label list
         self.labels = get_labels(name_of_set)
@@ -39,7 +40,9 @@ class ChalearnVideoDataset(Dataset):
         # Preprocess for both train and test
         self.preprocess = transforms.Compose([
             transforms.ToTensor(),  #  x/255, HWC -> CHW
-            transforms.Normalize(mean=[0.45, 0.45, 0.45, 0.45, 0.45], std=[0.225, 0.225, 0.225, 0.225, 0.225]),
+            transforms.Normalize(
+                mean=[0.45] * self.num_data_modality_channels, 
+                std=[0.225] * self.num_data_modality_channels),
         ])
 
 
@@ -86,10 +89,11 @@ class ChalearnVideoDataset(Dataset):
                 img = cv2.imread(str(frame_path))
                 img_U = cv2.imread(str(Path(frame_path.parent, 'U_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
                 img_V = cv2.imread(str(Path(frame_path.parent, 'V_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
-                img, img_U, img_V = [self._pad_resize_img(x, size) for x in (img, img_U, img_V)]  # HWC
-                img_mul = np.concatenate([img, img_U, img_V], axis=-1)
+                img_F = cv2.imread(str(Path(frame_path.parent, 'F_'+frame_path.name)))
+                img, img_U, img_V, img_F = [self._pad_resize_img(x, size) for x in (img, img_U, img_V, img_F)]  # HWC
+                img_mul = np.concatenate([img, img_U, img_V, img_F], axis=-1)
             else:
-                img_mul = np.zeros((size, size, 5), dtype=np.uint8)
+                img_mul = np.zeros((size, size, self.num_data_modality_channels), dtype=np.uint8) + 127
             input_tensor = self.preprocess(img_mul)
             res_dict[crop_folder_name] = input_tensor
 
@@ -114,7 +118,6 @@ class ChalearnVideoDataset(Dataset):
                 clips.append(clip_indices)
         return clips
 
-    # @profile
     def collect_features_from_indices(self, clip_indices, img_names, img_folder, label):
         """Collect features from indices like [5, 10, 15, ...]"""
         selected_imgs = [img_names[i] for i in clip_indices]
@@ -135,7 +138,6 @@ class ChalearnVideoDataset(Dataset):
     def __len__(self):
         return len(self.labels)
 
-    # @profile
     def __getitem__(self, index):
         label = self.labels[index]
         m, k, l = label
