@@ -202,7 +202,7 @@ def extract_crop(name_of_set):
 
     param_list = [(iuv, name_of_set, pad_root, crop_body_root) for iuv in iuv_list]
 
-    pool = Pool(15)
+    pool = Pool(10)
     pool.map(task_wrapper, param_list)
 
     # Alternative
@@ -210,7 +210,6 @@ def extract_crop(name_of_set):
     #     task_wrapper(param)
 
     print(f"{name_of_set} set done")
-
 
 extract_crop('train')
 extract_crop('test')
