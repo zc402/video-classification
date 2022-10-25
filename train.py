@@ -320,8 +320,8 @@ class Trainer():
 if __name__ == '__main__':
     train_cfg = get_override_cfg()
     yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
-
-    train_cfg.merge_from_file(Path('config', 'slowfast-RHand' + '.yaml'))
-    trainer = Trainer(train_cfg)
-    trainer.train()
+    for yaml_name in yaml_list:
+        train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
+        trainer = Trainer(train_cfg)
+        trainer.train()
     # trainer.test()
