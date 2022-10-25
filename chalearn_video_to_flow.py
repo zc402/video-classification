@@ -46,7 +46,7 @@ def video2flow(video_relative_path, video_root, flow_root):
 
     cap = cv2.VideoCapture(str(video_path))
     resize_w, resize_h = (80, 60)
-    flow_list = [np.zeros((resize_w, resize_h, 2))]
+    flow_list = [np.zeros((resize_h, resize_w, 2))]
     im1 = None
     im2 = None
     while cap.isOpened():

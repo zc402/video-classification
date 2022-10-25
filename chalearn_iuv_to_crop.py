@@ -21,19 +21,6 @@ def load_iuv(pkl_path):
         result = pickle.load(f)
     return result
 
-
-def crop_body(img_path, target_path, bbox):
-    if Path(target_path).exists():
-        return  # Do not overwrite
-    # if bbox is None:
-    #     black = np.zeros((10, 10, 3), dtype=np.uint8)
-    #     cv2.imwrite(str(target_path), black)
-    #     return
-    x1, y1, x2, y2 = bbox
-    img = cv2.imread(str(img_path))  # H W C
-    cropped = img[y1:y2, x1:x2, :]
-    cv2.imwrite(str(target_path), cropped)
-
 def load_flow(body_img_path):
     img_num = int(body_img_path.stem)
     flow_start = img_num - cfg.CHALEARN.IMG_SAMPLE_INTERVAL+1  
@@ -43,20 +30,58 @@ def load_flow(body_img_path):
     flow_name = [str(i).zfill(5) for i in flow_num]
     flow_name = [i+'.jpg' for i in flow_name]
 
-    M_XXXXX, XXX, name_set = body_img_path.parts[-1], body_img_path.parts[-2], body_img_path.parts[-3]
-    base = cfg.CHALEARN.FLOWRGB
+    name_set, XXX, M_XXXXX  = body_img_path.parent.parts[-3:]  # ('train', '159', 'M_31633')
+    base = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.FLOW)
     flow_folder = Path(base, name_set, XXX, M_XXXXX)
     flow_compact = []
     for name in flow_name:  # 00001.jpg,  ...,  00005.jpg
         flow_path = Path(flow_folder, name)
-        anchor_path = Path(flow_folder, flow_name[-1])  # Should always exist
+        # anchor_path = Path(flow_folder, flow_name[-1])  # Should always exist
         if flow_path.exists():
             flow = cv2.imread(str(flow_path))
         else:
-            flow = cv2.imread(str(anchor_path))
+            # TODO: fix 00000.jpg (rerun video to flow) and raise exception here
+            flow = np.zeros((60, 80, 3), dtype=np.uint8) + 127
         flow_compact.append(flow)
-    
+    flow_compact = np.stack(flow_compact)  # NHWC
+    flow_compact = np.mean(flow_compact, axis=0)
+    # TODO: find max of abs to replace mean operator
+    # flow_uv = flow_compact[:, :, :, 0:2]  # UV. 0~255, 127 as center
+    # flow_mag = flow_compact[:, :, :, 2:3]  # manitude. 0~255
+    # flow_uv_0 = flow_uv.astype(np.float) - 127  # -127 ~ 128, 0 as center
+    # abs_uv = np.abs(flow_uv_0)
+    # uv_argmax = np.argmax(abs_uv, axis=0)
+    # max_flow_uv = flow_uv[uv_argmax, :, :, :]
+
+
     return flow_compact
+
+def crop_body(img_path, target_path, bbox):
+    flow = load_flow(img_path)  # (60, 80, 3)
+    # if Path(target_path).exists():
+    #     return  # Do not overwrite
+    # if bbox is None:
+    #     black = np.zeros((10, 10, 3), dtype=np.uint8)
+    #     cv2.imwrite(str(target_path), black)
+    #     return
+    x1, y1, x2, y2 = bbox
+    img = cv2.imread(str(img_path))  # H W C
+    cropped = img[y1:y2, x1:x2, :]
+    cv2.imwrite(str(target_path), cropped)
+    # crop flow 
+    
+    flow_resize = cv2.resize(flow, (320, 240))  # resize to image size
+    h, w, c = flow_resize.shape
+    flow_pad = np.zeros(shape=(h*2, w*2, c), dtype=img.dtype) + 127  # pad flow
+    flow_pad[h//2: h//2 + h, w//2: w//2 + w, :] = flow_resize
+    
+    crop_flow = flow_pad[y1:y2, x1:x2]
+    flow_target_name = 'F_' + target_path.name
+    flow_target_path = Path(target_path.parent, flow_target_name)
+    cv2.imwrite(str(flow_target_path), crop_flow)
+    
+
+
     
 
 def crop_body_parts(body_img_path, target_relative_path, iuv):
@@ -111,7 +136,7 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         x,y,w,h = largest_xywh
         if w < 15 or h < 15:
             return  # Discard images with abnormal small size
-        # ----------Image
+        # ----------cut image from CropBody
         cropped = img[y:y+h, x:x+w, :]
         cv2.imwrite(str(target_path), cropped)
         # ----------UV
@@ -128,16 +153,9 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
 
         # ----------Flow
         # xy are the box results of padded image. recover to that of normal image
-        nx = x - (320//2)
-        ny = y - (240//2)
-        assert nx > 0 and ny > 0
-        # Flows are 1/4 of the image size.
-        nnx = nx // 4
-        nny = ny // 4
-        nnw = w // 4
-        nnh = h // 4
-        flow = load_flow(body_img_path)
-
+        # nx = x - (320//2)
+        # ny = y - (240//2)
+        # assert nx > 0 and ny > 0
 
 
 
@@ -187,8 +205,8 @@ def extract_crop(name_of_set):
             nsetx3x5img = Path(name_of_set, x3x5img)
             pad_img_path = Path(pad_root, name_of_set, x3x5img)
             crop_img_path = Path(crop_body_root, name_of_set, x3x5img)
-            if crop_img_path.exists():
-                continue  # Do not override
+            # if crop_img_path.exists():
+            #     continue  # Do not override
             crop_img_path.parent.mkdir(parents=True, exist_ok=True)
 
             if iuv_item['pred_boxes_XYXY'].size()[0] == 0:

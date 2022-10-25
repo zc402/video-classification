@@ -19,7 +19,7 @@ _C.CHALEARN.IUV = '4_IUV'  # IUV from densepose
 _C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
 _C.CHALEARN.CLIP_LEN = 12  # Clip duration, Res3d
 _C.CHALEARN.FLOW = '2_Flow'  # Optical flow
-_C.CHALEARN.FLOWRGB = '2.1_FlowRGB'
+# _C.CHALEARN.FLOWRGB = '2.1_FlowRGB'
 
 _C.DENSEPOSE = '/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose'  # base dir of apply_net.py
 _C.PYFLOW = '/home/zc/NutstoreFiles/Projects/deep-learning/pyflow'
