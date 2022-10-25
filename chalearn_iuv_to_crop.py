@@ -202,7 +202,7 @@ def extract_crop(name_of_set):
 
     param_list = [(iuv, name_of_set, pad_root, crop_body_root) for iuv in iuv_list]
 
-    pool = Pool(10)
+    pool = Pool(10)  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
     pool.map(task_wrapper, param_list)
 
     # Alternative
