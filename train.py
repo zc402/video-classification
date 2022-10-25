@@ -94,10 +94,15 @@ class ModelManager():
             input_channels=(5, 3),
             stem_dim_outs=(64, 8),
             slowfast_fusion_conv_stride=(1,1,1),
+            slowfast_fusion_conv_kernel_size=(7, 1, 1),
             head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1)),
         )
         pretrained = torch.load('logs/SLOWFAST_8x8_R50.pyth')
-        model.load_state_dict(pretrained, strict=False)
+        state_dict = pretrained["model_state"]
+        del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
+        del state_dict['blocks.6.proj.weight']
+        del state_dict['blocks.6.proj.bias']
+        model.load_state_dict(state_dict, strict=False)
         model.cuda()
         return model
     
