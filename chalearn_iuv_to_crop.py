@@ -10,6 +10,7 @@ from utils.chalearn import train_list, test_list
 from config.crop_cfg import crop_part_args
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt 
+from multiprocessing import Pool
 
 cfg = get_override_cfg()
 
@@ -159,30 +160,38 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         cv2.imwrite(str(flow_target_path), flow_cropped)
 
     [_crop_part(*args) for args in crop_part_args]  # args: (torso + larm, 'CropTorsoLArm')
-    # lhand = [4]
-    # rhand = [3]
-    # larm = [21, 19, 17, 15]
-    # rarm = [20, 22, 16, 18]
-    # torso = [1, 2]
-    # head = [23, 24]
 
-    # _crop_part(lhand, 'CropLHand')
-    # _crop_part(rhand, 'CropRHand')
-    # _crop_part(larm, 'CropLArm')
-    # _crop_part(rarm, 'CropRArm')
-    # _crop_part(torso, 'CropTorso')
-
-    # _crop_part(torso + larm, 'CropTorsoLArm')
-    # _crop_part(torso + rarm, 'CropTorsoRArm')
-
-    # _crop_part(head, 'CropHead')
-
-    # _crop_part(lhand + larm, 'CropLHandArm')
-    # _crop_part(rhand + rarm, 'CropRHandArm')
-
-    # _crop_part(head + torso, 'CropHeadTorso')
-    # _crop_part(lhand + larm + torso + head + rarm + rhand, 'CropHTAH')
     
+def crop_body_bodyparts(iuv, name_of_set, pad_root, crop_body_root):
+    iuv_res = load_iuv(iuv)
+    
+    for iuv_item in iuv_res:  # images
+        # Path: ./train/001/M_00068/00000.jpg
+        file_path = iuv_item['file_name']
+        file_path = Path(file_path)
+        x_img = file_path.name  # 00000.jpg
+        x5 = file_path.parent.name  # M_00068
+        x3 = Path(iuv).stem  # 001
+        x3x5img = Path(x3, x5, x_img)  # 001/M_00068/00000.jpg
+        nsetx3x5img = Path(name_of_set, x3x5img)
+        pad_img_path = Path(pad_root, name_of_set, x3x5img)
+        crop_img_path = Path(crop_body_root, name_of_set, x3x5img)
+        # if crop_img_path.exists():
+        #     continue  # Do not override
+        crop_img_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if iuv_item['pred_boxes_XYXY'].size()[0] == 0:
+            # No detection
+            # crop(pad_img_path, crop_img_path, None)
+            print(f"No box detection: {pad_img_path}")
+        else:
+            bbox = iuv_item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
+            crop_body(pad_img_path, crop_img_path, bbox)
+            crop_body_parts(crop_img_path, nsetx3x5img, iuv_item)
+
+def task_wrapper(param):
+    iuv, name_of_set, pad_root, crop_body_root = param
+    crop_body_bodyparts(iuv, name_of_set, pad_root, crop_body_root)
 
 def extract_crop(name_of_set):
     pad_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.PAD)
@@ -190,44 +199,17 @@ def extract_crop(name_of_set):
     crop_body_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.CROP_BODY)
 
     iuv_list = glob.glob(str(Path(iuv_root, name_of_set, "*.pkl")))
-    for iuv in tqdm(iuv_list):
-        iuv_res = load_iuv(iuv)
-        
-        for iuv_item in iuv_res:  # images
-            # Path: ./train/001/M_00068/00000.jpg
-            file_path = iuv_item['file_name']
-            file_path = Path(file_path)
-            x_img = file_path.name  # 00000.jpg
-            x5 = file_path.parent.name  # M_00068
-            x3 = Path(iuv).stem  # 001
-            x3x5img = Path(x3, x5, x_img)  # 001/M_00068/00000.jpg
-            nsetx3x5img = Path(name_of_set, x3x5img)
-            pad_img_path = Path(pad_root, name_of_set, x3x5img)
-            crop_img_path = Path(crop_body_root, name_of_set, x3x5img)
-            # if crop_img_path.exists():
-            #     continue  # Do not override
-            crop_img_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if iuv_item['pred_boxes_XYXY'].size()[0] == 0:
-                # No detection
-                # crop(pad_img_path, crop_img_path, None)
-                print(f"No box detection: {pad_img_path}")
-            else:
-                bbox = iuv_item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
-                crop_body(pad_img_path, crop_img_path, bbox)
-                crop_body_parts(crop_img_path, nsetx3x5img, iuv_item)
-        
+    param_list = [(iuv, name_of_set, pad_root, crop_body_root) for iuv in iuv_list]
 
-    # for (m,k,l) in tqdm(label_list):
-    #     # k: train/002/M_00210.avi
-    #     name_of_set = Path(m).parent.parent.name  # train
-    #     x3 = Path(m).parent.name  # 001
-    #     x5 = Path(m).stem  # M_00210, name of pad folder
-    #     pad_video = Path(pad_root, name_of_set, x3, x5)
-    #     iuv_path = Path(iuv_root, name_of_set, x3 + '.pkl')
-    #     iuv_res = load_iuv(iuv_path)
-    #     boxes = 
-    #     pass
+    pool = Pool(15)
+    pool.map(task_wrapper, param_list)
+
+    # Alternative
+    # for param in tqdm(param_list):
+    #     task_wrapper(param)
+
+    print(f"{name_of_set} set done")
 
 
 extract_crop('train')
