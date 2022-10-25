@@ -1,0 +1,8 @@
+CHALEARN:
+  BATCH_SIZE: 15
+  CLIP_LEN: 8
+
+MODEL:
+  NAME: 'slowfast-HTAH' 
+  R3D_INPUT: 'CropHTAH'
+  LR: 5e-4

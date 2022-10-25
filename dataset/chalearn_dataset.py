@@ -66,12 +66,13 @@ class ChalearnVideoDataset(Dataset):
         Data augmentation for training
         """
         for (folder, size) in crop_resize_dict.items():
-            padding = size // 10
+            if folder in feature_dict.keys():
+                padding = size // 10
 
-            augment = transforms.Compose([
-                transforms.RandomCrop(size, padding)
-            ])
-            feature_dict[folder] = augment(feature_dict[folder])
+                augment = transforms.Compose([
+                    transforms.RandomCrop(size, padding)
+                ])
+                feature_dict[folder] = augment(feature_dict[folder])
 
 
     def _get_image_features(self, nsetx3x5img:Path):
@@ -81,7 +82,8 @@ class ChalearnVideoDataset(Dataset):
         """
         # size = 100  # pixels
 
-        res_dict = {key: None for key in crop_folder_list}
+        # res_dict = {key: None for key in crop_folder_list}
+        res_dict = {self.cfg.MODEL.R3D_INPUT: None}  # Load less data to prevent memory fail
         for crop_folder_name in res_dict.keys():
             size = self.crop_resize[crop_folder_name]
             frame_path = Path(self.cfg.CHALEARN.ROOT, crop_folder_name, nsetx3x5img)

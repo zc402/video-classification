@@ -10,7 +10,7 @@ head = [23, 24]
 # resize pixels
 sm = 64
 md = 128
-lg = 256
+lg = 192  # 256
 
 properties = [
     (lhand, 'CropLHand', sm),

@@ -1,0 +1,8 @@
+CHALEARN:
+  BATCH_SIZE: 30
+  CLIP_LEN: 8
+
+MODEL:
+  NAME: 'slowfast-RHandArm' 
+  R3D_INPUT: 'CropRHandArm'
+  LR: 5e-4

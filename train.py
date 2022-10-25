@@ -39,7 +39,7 @@ class ModelManager():
         elif model_name == "res3d":
             self.init_model = self._init_res3d_model
             self.prepare_data = self._prepare_res3d_data
-        elif model_name == "slowfast":
+        elif "slowfast" in model_name:
             self.init_model = self._init_slowfast_model
             self.prepare_data = self._prepare_slowfast_data
         else:
@@ -107,7 +107,7 @@ class ModelManager():
         return model
     
     def _prepare_slowfast_data(self, batch):
-        x = batch['CropHTAH'].cuda()  # NTCHW
+        x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         x_rgbuv = x[:, 0:5]
         x_flow = x[:, 5:8]
@@ -120,7 +120,7 @@ class Trainer():
     def __init__(self, cfg):
         self.debug = False
         if not self.debug:
-            self.num_workers = 8
+            self.num_workers = 10
             self.save_debug_img = False
         else:  # Debug
             self.num_workers = 0
@@ -131,16 +131,16 @@ class Trainer():
         self.train_dataset = ChalearnVideoDataset(cfg, 'train')
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=True, num_workers=self.num_workers)
 
-        self.valid_dataset = ChalearnVideoDataset(cfg, 'valid')
-        self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
+        # self.valid_dataset = ChalearnVideoDataset(cfg, 'valid')
+        # self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
 
         self.test_dataset = ChalearnVideoDataset(cfg, 'test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=10, shuffle=False, drop_last=True, num_workers=self.num_workers, collate_fn=lambda x:x)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=10, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
 
         self.mm = ModelManager(cfg)
         self.model = self.mm.init_model()
         self.loss = CrossEntropyLoss()
-        self.optim = optim.Adam(self.model.parameters(), lr=1e-3)
+        self.optim = optim.Adam(self.model.parameters(), lr=cfg.MODEL.LR)
         
         self.num_step = 0
         self.ckpt_dir = Path(cfg.MODEL.CKPT_DIR, cfg.MODEL.NAME)
@@ -168,18 +168,6 @@ class Trainer():
         state_dict = torch.load(ckpt)
         self.model.load_state_dict(state_dict, strict=True)
         pass
-
-    # def prepare_data(self, batch):
-    #     batch = {k: x.cuda() for k, x in batch.items()}
-    #     # Clip C from NTCHW
-    #     image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
-    #     image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
-    #     image_features = image_features_RGB + image_features_UV
-    #     y_true = batch['label']
-
-    #     if self.save_debug_img:
-    #         self.debug_show(batch['CropHTAH'])  # NTCHW     
-    #     return image_features, y_true
 
     def train_epoch(self):
 
@@ -327,7 +315,9 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_override_cfg()
-    train_cfg.merge_from_file('config/slowfast.yaml')
+    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm']
+
+    train_cfg.merge_from_file(Path('config', 'slowfast-RHandArm' + '.yaml'))
     trainer = Trainer(train_cfg)
     trainer.train()
     # trainer.test()
