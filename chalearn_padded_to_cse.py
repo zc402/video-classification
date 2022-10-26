@@ -12,18 +12,18 @@ os.environ['MKL_THREADING_LAYER'] = 'GNU'
 
 cfg = get_override_cfg()
 
-def to_iuv(cfg, name_of_set):
+def to_CSE(cfg, name_of_set='train'):
 
     pad_root = Path(cfg.CHALEARN.ROOT ,cfg.CHALEARN.PAD)
-    iuv_root = Path(cfg.CHALEARN.ROOT ,cfg.CHALEARN.IUV)
-    Path(iuv_root).mkdir(exist_ok=True)
+    CSE_root = Path(cfg.CHALEARN.ROOT ,cfg.CHALEARN.CSE)
+    Path(CSE_root).mkdir(exist_ok=True)
 
     densepose = Path(cfg.DENSEPOSE)
     # sys.path.append(str(densepose))
     apply_net = Path(densepose, 'apply_net.py')
-    yaml_path = Path(densepose, 'configs', 'densepose_rcnn_R_50_FPN_s1x.yaml')
-    model_download = Path('pretrained', 'model_final_162be9.pkl').absolute()
-    # model_download = 'https://dl.fbaipublicfiles.com/densepose/densepose_rcnn_R_50_FPN_s1x/165712039/model_final_162be9.pkl'
+    yaml_path = Path(densepose, 'configs', 'cse', 'densepose_rcnn_R_50_FPN_s1x.yaml')
+    model_download = Path('pretrained', 'model_final_c4ea5f.pkl').absolute()
+    # model_download = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_s1x/251155172/model_final_c4ea5f.pkl'
 
     train_folder = Path(pad_root, name_of_set)  # 001 002 003 ...
     xxx_folders = glob.glob(str(Path(train_folder, "*")), recursive=False)
@@ -34,7 +34,7 @@ def to_iuv(cfg, name_of_set):
         # imgs = glob.glob(str(Path(xxx_folder, "M_*", "*.jpg")))
         jpg_wildcard = Path(xxx_folder, "**", "*.jpg")
         jpg_wildcard = str(jpg_wildcard)
-        output_path = Path(iuv_root, name_of_set, xxx_name + '.pkl')
+        output_path = Path(CSE_root, name_of_set, xxx_name + '.pkl')
         if output_path.exists():
             print(f'ignore existed file: {str(output_path)}')
             continue
@@ -44,6 +44,6 @@ def to_iuv(cfg, name_of_set):
             "{jpg_wildcard}" --output {output_path}'
         os.system(apply_net_command)
 
-to_iuv(cfg, 'train')
-to_iuv(cfg, 'test')
-to_iuv(cfg, 'valid')
+to_CSE(cfg, 'train')
+to_CSE(cfg, 'test')
+to_CSE(cfg, 'valid')

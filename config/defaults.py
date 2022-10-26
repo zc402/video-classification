@@ -16,19 +16,21 @@ _C.CHALEARN.IMG = '2_Images'  # Path of converted images
 _C.CHALEARN.IMG_SAMPLE_INTERVAL = 5  # Sample 1 image per 5 images
 _C.CHALEARN.PAD = '3_Pad'  # Path of padded videos
 _C.CHALEARN.IUV = '4_IUV'  # IUV from densepose
+_C.CHALEARN.CSE = '4_CSE'  
 _C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
 _C.CHALEARN.CLIP_LEN = 12  # Clip duration, Res3d
-_C.CHALEARN.FLOW = '2_Flow'  # Optical flow
-# _C.CHALEARN.FLOWRGB = '2.1_FlowRGB'
+_C.CHALEARN.FLOW = '2_Flow'  # Optical flow, saved as RGB images
 
-_C.DENSEPOSE = '/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose'  # base dir of apply_net.py
-_C.PYFLOW = '/home/zc/NutstoreFiles/Projects/deep-learning/pyflow'
+_C.DENSEPOSE = './detectron2/projects/DensePose'
 
 _C.MODEL = CfgNode()
+_C.MODEL.LOGS = str(Path(_C.CHALEARN.ROOT, 'logs'))
 _C.MODEL.NAME = 'model_name'
-_C.MODEL.CKPT_DIR = './logs/checkpoints/'
+_C.MODEL.CKPT_DIR = str(Path(_C.MODEL.LOGS, 'checkpoints'))
 _C.MODEL.R3D_INPUT = 'CropHTAH'  # Input for c3d model
 _C.MODEL.LR = 1e-3
+
+_C.DEBUG = False  # Use single thread
 
 def get_cfg():
     """

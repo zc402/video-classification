@@ -31,7 +31,7 @@ class ChalearnVideoDataset(Dataset):
         """name_of_set: train test val"""
         self.name_of_set = name_of_set
         self.cfg = cfg
-        self.num_data_modality_channels = 8
+        self.num_data_modality_channels = 9
 
         # Load label list
         self.labels = get_labels(name_of_set)
@@ -92,8 +92,9 @@ class ChalearnVideoDataset(Dataset):
                 img_U = cv2.imread(str(Path(frame_path.parent, 'U_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
                 img_V = cv2.imread(str(Path(frame_path.parent, 'V_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
                 img_F = cv2.imread(str(Path(frame_path.parent, 'F_'+frame_path.name)))
-                img, img_U, img_V, img_F = [self._pad_resize_img(x, size) for x in (img, img_U, img_V, img_F)]  # HWC
-                img_mul = np.concatenate([img, img_U, img_V, img_F], axis=-1)
+                img_D = cv2.imread(str(Path(frame_path.parent, 'D_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
+                img, img_U, img_V, img_F, img_D = [self._pad_resize_img(x, size) for x in (img, img_U, img_V, img_F, img_D)]  # HWC
+                img_mul = np.concatenate([img, img_U, img_V, img_F, img_D], axis=-1)
             else:
                 img_mul = np.zeros((size, size, self.num_data_modality_channels), dtype=np.uint8) + 127
             input_tensor = self.preprocess(img_mul)

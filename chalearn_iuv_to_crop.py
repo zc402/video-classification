@@ -69,19 +69,27 @@ def crop_body(img_path, target_path, bbox):
     img = cv2.imread(str(img_path))  # H W C
     cropped = img[y1:y2, x1:x2, :]
     cv2.imwrite(str(target_path), cropped)
-    # crop flow 
-    
+
+    # Flow modality
     flow_resize = cv2.resize(flow, (320, 240))  # resize to image size
     h, w, c = flow_resize.shape
     flow_pad = np.zeros(shape=(h*2, w*2, c), dtype=img.dtype) + 127  # pad flow
     flow_pad[h//2: h//2 + h, w//2: w//2 + w, :] = flow_resize
-    
+
     crop_flow = flow_pad[y1:y2, x1:x2]
     flow_target_name = 'F_' + target_path.name
     flow_target_path = Path(target_path.parent, flow_target_name)
     cv2.imwrite(str(flow_target_path), crop_flow)
-    
 
+    # Depth modality
+    depth_folder = img_path.parent.name.replace('M_', 'K_')
+    depth_path = Path(img_path.parent.parent, depth_folder, img_path.name)
+    depth_img = cv2.imread(str(depth_path))
+    crop_depth = depth_img[y1:y2, x1:x2, :]
+    depth_target_name = 'D_' + target_path.name
+    depth_target_path = Path(target_path.parent, depth_target_name)
+    cv2.imwrite(str(depth_target_path), crop_depth)
+    pass
 
     
 
@@ -159,6 +167,15 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         flow_target_path = target_path.parent / ('F_' + target_path.name)
         cv2.imwrite(str(flow_target_path), flow_cropped)
 
+        # ----------Depth
+        depth_img_path = Path(body_img_path.parent, 'D_' + body_img_path.name)
+        depth = cv2.imread(str(depth_img_path))
+        depth_cropped = depth[y:y+h, x:x+w, :]
+        depth_target_path = target_path.parent / ('D_' + target_path.name)
+        cv2.imwrite(str(depth_target_path), depth_cropped)
+        # ----------CSE
+
+
     [_crop_part(*args) for args in crop_part_args]  # args: (torso + larm, 'CropTorsoLArm')
 
     
@@ -185,7 +202,8 @@ def crop_body_bodyparts(iuv, name_of_set, pad_root, crop_body_root):
             # crop(pad_img_path, crop_img_path, None)
             print(f"No box detection: {pad_img_path}")
         else:
-            bbox = iuv_item['pred_boxes_XYXY'].cpu().numpy().astype(int)[0]  # shape: 4
+            box_score_argmax = np.argmax(iuv_item['scores'])
+            bbox = iuv_item['pred_boxes_XYXY'][box_score_argmax].cpu().numpy().astype(int)  # shape: 4
             crop_body(pad_img_path, crop_img_path, bbox)
             crop_body_parts(crop_img_path, nsetx3x5img, iuv_item)
 
@@ -202,12 +220,13 @@ def extract_crop(name_of_set):
 
     param_list = [(iuv, name_of_set, pad_root, crop_body_root) for iuv in iuv_list]
 
-    pool = Pool(10)  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
-    pool.map(task_wrapper, param_list)
-
-    # Alternative
-    # for param in tqdm(param_list):
-    #     task_wrapper(param)
+    multithread = True
+    if multithread:
+        pool = Pool(10)  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
+        pool.map(task_wrapper, param_list)
+    else:
+        for param in tqdm(param_list):
+            task_wrapper(param)
 
     print(f"{name_of_set} set done")
 

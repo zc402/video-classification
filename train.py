@@ -19,8 +19,14 @@ from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d, Conv3d, Identity
 from config.defaults import get_override_cfg
 from torch.utils.data.dataloader import default_collate
 import os
+
+from model.my_fusion_builder import MyFastToSlowFusionBuilder
 os.environ["HTTPS_PROXY"] = "http://127.0.0.1:20170"
 os.environ["HTTP_PROXY"] = "http://127.0.0.1:20170"
+import torch.nn as nn
+
+from pytorchvideo.models.resnet import create_bottleneck_block, create_res_stage
+from pytorchvideo.models.stem import create_res_basic_stem
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
 from model.multiple_resnet import MultipleResnet
@@ -51,57 +57,121 @@ class ModelManager():
     def prepare_data(self):
         raise NotImplementedError()
 
-    # -----------res2d----------------------
+    # # -----------res2d----------------------
 
-    def _init_res2d_model(self):
-        channels_RGB = [3 for _ in crop_folder_list]
-        channels_UV = [2 for _ in crop_folder_list]
-        channels_list = channels_RGB + channels_UV
-        model = MultipleResnet(self.cfg, channels_list).cuda()
-        return model
+    # def _init_res2d_model(self):
+    #     channels_RGB = [3 for _ in crop_folder_list]
+    #     channels_UV = [2 for _ in crop_folder_list]
+    #     channels_list = channels_RGB + channels_UV
+    #     model = MultipleResnet(self.cfg, channels_list).cuda()
+    #     return model
 
-    def _prepare_res2d_data(self, batch):
-        """Prepare data from batch to forward(x)"""
-        batch = {k: x.cuda() for k, x in batch.items()}
-        # Clip C from NTCHW
-        image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
-        image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
-        image_features = image_features_RGB + image_features_UV
-        y_true = batch['label']
+    # def _prepare_res2d_data(self, batch):
+    #     """Prepare data from batch to forward(x)"""
+    #     batch = {k: x.cuda() for k, x in batch.items()}
+    #     # Clip C from NTCHW
+    #     image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
+    #     image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
+    #     image_features = image_features_RGB + image_features_UV
+    #     y_true = batch['label']
 
-        # if self.save_debug_img:
-        #     self.debug_show(batch['CropHTAH'])  # NTCHW     
-        return image_features, y_true
+    #     # if self.save_debug_img:
+    #     #     self.debug_show(batch['CropHTAH'])  # NTCHW     
+    #     return image_features, y_true
     
-    # -----------res3d----------------------
-    def _init_res3d_model(self):
-        model = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
-        model.blocks[0].conv = Conv3d(5, 64, (1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
-        model.cuda()
-        return model
+    # # -----------res3d----------------------
+    # def _init_res3d_model(self):
+    #     model = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
+    #     model.blocks[0].conv = Conv3d(5, 64, (1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
+    #     model.cuda()
+    #     return model
 
-    def _prepare_res3d_data(self, batch):
-        x = batch[self.cfg.MODEL.R3D_INPUT].cuda()
-        y_true = batch['label'].cuda()
-        x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        return x, y_true
+    # def _prepare_res3d_data(self, batch):
+    #     x = batch[self.cfg.MODEL.R3D_INPUT].cuda()
+    #     y_true = batch['label'].cuda()
+    #     x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
+    #     return x, y_true
     
     # ----------slow_fast------------------
     def _init_slowfast_model(self):
         model = create_slowfast(
+            # SlowFast configs.
+            slowfast_channel_reduction_ratio = (4, 4,),
+            slowfast_conv_channel_fusion_ratio = 0,  # 2*2: 2 fast 
             model_depth=50,
             model_num_class=self.cfg.CHALEARN.NUM_CLASS,
-            input_channels=(5, 3),
-            stem_dim_outs=(64, 8),
-            slowfast_fusion_conv_stride=(1,1,1),
-            slowfast_fusion_conv_kernel_size=(7, 1, 1),
-            head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1)),
+            input_channels=(5, 3, 1),
+            fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder().create_module,
+
+            # slowfast_fusion_conv_stride=(1,1,1),
+            # slowfast_fusion_conv_kernel_size=(7, 1, 1),
+
+            # Stem configs.
+            stem_function = (
+                create_res_basic_stem,
+                create_res_basic_stem,
+                create_res_basic_stem,
+            ),
+            stem_dim_outs=(64, 16, 16),  # (slow, fast, fast)
+            stem_conv_kernel_sizes = ((1, 7, 7), (1, 7, 7), (1, 7, 7)),
+            stem_conv_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2)),
+            stem_pool = (nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d),
+            stem_pool_kernel_sizes = ((1, 3, 3), (1, 3, 3), (1, 3, 3)),
+            stem_pool_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2)),
+            
+            # Stage configs.
+            stage_conv_a_kernel_sizes = (
+                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
+                ((3, 1, 1), (3, 1, 1), (3, 1, 1), (3, 1, 1)),
+                ((3, 1, 1), (3, 1, 1), (3, 1, 1), (3, 1, 1)),
+            ),
+            stage_conv_b_kernel_sizes = (
+                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
+                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
+                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
+            ),
+            stage_conv_b_num_groups = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
+            stage_conv_b_dilations = (
+                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
+                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
+                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
+            ),
+            stage_spatial_strides = ((1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2)),
+            stage_temporal_strides = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
+            bottleneck = (
+                (
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                ),
+                (
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                ),
+                (
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                ),
+            ),
+            # Head configs.
+            head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1), (8, 1, 1)),
         )
-        pretrained = torch.load('logs/SLOWFAST_8x8_R50.pyth')
+        pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
         del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
         del state_dict['blocks.6.proj.weight']
         del state_dict['blocks.6.proj.bias']
+
+        for key in list(state_dict.keys()):
+            if 'multipathway_blocks' in key:
+                del state_dict[key]
+        
+
         model.load_state_dict(state_dict, strict=False)
         model.cuda()
         return model
@@ -111,14 +181,15 @@ class ModelManager():
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         x_rgbuv = x[:, 0:5]
         x_flow = x[:, 5:8]
+        x_depth = x[:, 8:9]
         
         y_true = batch['label'].cuda()
-        return [x_rgbuv, x_flow ], y_true
+        return [x_rgbuv, x_flow, x_depth], y_true
 
 class Trainer():
 
     def __init__(self, cfg):
-        self.debug = False
+        self.debug = cfg.DEBUG
         if not self.debug:
             self.num_workers = 10
             self.save_debug_img = False
@@ -319,9 +390,10 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_override_cfg()
-    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
-    for yaml_name in yaml_list:
-        train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
-        trainer = Trainer(train_cfg)
-        trainer.train()
-    # trainer.test()
+    # yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
+    # for yaml_name in yaml_list:
+    #     train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
+    #     trainer = Trainer(train_cfg)
+    #     trainer.train()
+    train_cfg.merge_from_file(Path('config', 'slowfast-LHand' + '.yaml'))
+    Trainer(train_cfg).train()
