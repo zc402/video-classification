@@ -38,11 +38,10 @@ def to_iuv_one_folder(xxx_folder, name_of_set, ):
         "{jpg_wildcard}" --output {output_path}'
     os.system(apply_net_command)
 
-counter = 0
-
-def to_iuv_one_folder_wrap(args):
-    print(f'Processing {counter}')
-    to_iuv_one_folder(*args)
+def to_iuv_one_folder_wrap(params):
+    i, xxx_folder, name_of_set = params
+    print(f'Processing {i}')
+    to_iuv_one_folder(xxx_folder, name_of_set)
 
 def to_iuv(cfg, name_of_set):
 
@@ -54,14 +53,14 @@ def to_iuv(cfg, name_of_set):
     xxx_folders = glob.glob(str(Path(train_folder, "*")), recursive=False)
     xxx_folders = [d for d in xxx_folders if Path(d).is_dir()]
     param_list = []
-    for xxx_folder in xxx_folders:
-        param_list.append((xxx_folder, name_of_set))
+    for i, xxx_folder in enumerate(xxx_folders):
+        param_list.append((i, xxx_folder, name_of_set))
 
     if cfg.DEBUG:
-        for param in param_list:
+        for param in tqdm(param_list):
             to_iuv_one_folder_wrap(param)
     else:
-        pool = Pool(10)
+        pool = Pool(min(10, cfg.NUM_CPU))
         pool.map(to_iuv_one_folder_wrap, param_list)
 
 to_iuv(cfg, 'train')

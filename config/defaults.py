@@ -20,6 +20,7 @@ _C.CHALEARN.CSE = '4_CSE'
 _C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
 _C.CHALEARN.CLIP_LEN = 12  # Clip duration, Res3d
 _C.CHALEARN.FLOW = '2_Flow'  # Optical flow, saved as RGB images
+_C.CHALEARN.IMG_ENERGY = '2_Images_energy'  # Image with enough flow energy
 
 _C.DENSEPOSE = './detectron2/projects/DensePose'
 
@@ -31,6 +32,7 @@ _C.MODEL.R3D_INPUT = 'CropHTAH'  # Input for c3d model
 _C.MODEL.LR = 1e-3
 
 _C.DEBUG = False  # Use single thread
+_C.NUM_CPU = 16
 
 def get_cfg():
     """

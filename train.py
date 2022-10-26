@@ -189,10 +189,10 @@ class ModelManager():
     def _prepare_slowfast_data(self, batch):
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        x_rgb = x[:, 0:3]
-        x_uv = x[:, 3:5]
-        x_flow = x[:, 5:8]
-        x_depth = x[:, 8:9]
+        x_rgb = x[:, 0:3]   # plt.imshow(x_rgb.cpu()[0,:,0].permute((1,2,0)))
+        x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
+        x_flow = x[:, 5:8]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
+        x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
         
         y_true = batch['label'].cuda()
         return [x_rgb, x_uv, x_flow, x_depth], y_true
@@ -401,10 +401,10 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_override_cfg()
-    # yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
-    # for yaml_name in yaml_list:
-    #     train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
-    #     trainer = Trainer(train_cfg)
-    #     trainer.train()
-    train_cfg.merge_from_file(Path('config', 'slowfast-LHand' + '.yaml'))
+    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
+    for yaml_name in yaml_list:
+        train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
+        trainer = Trainer(train_cfg)
+        trainer.train()
+    # train_cfg.merge_from_file(Path('config', 'slowfast-HTAH' + '.yaml'))
     Trainer(train_cfg).train()

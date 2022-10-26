@@ -26,7 +26,7 @@ def pad_images_loop_wrapper(x_list):
 
 def pad_images(label_list, img_root, pad_root):
 
-    pool = Pool(16)
+    pool = Pool(cfg.NUM_CPU)
     
     param_list = []
     for mkl in label_list:

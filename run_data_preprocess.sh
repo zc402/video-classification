@@ -1,4 +1,6 @@
 #!/bin/bash
+# sudo apt install gcc g++ ninja-build
+# python -m pip install -e detectron2
 
 python chalearn_sample_data.py
 python chalearn_video_to_images.py

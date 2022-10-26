@@ -14,6 +14,7 @@ import numpy as np
 from multiprocessing import Pool
 import sys
 from numpy.linalg import norm 
+import io
 
 def flow(im1, im2):
 
@@ -28,7 +29,6 @@ def flow(im1, im2):
     nInnerFPIterations = 1
     nSORIterations = 30
     colType = 0  # 0 or default:RGB, 1:GRAY (but pass gray image with shape (h,w,1))
-
 
     u, v, im2W = pyflow.coarse2fine_flow(
         im1, im2, alpha, ratio, minWidth, nOuterFPIterations, nInnerFPIterations,
@@ -68,11 +68,15 @@ def video2flow(video_relative_path, video_root, flow_root):
         flow_list.append(y)
     
     for frame_num, f in enumerate(flow_list):
+        # f: HWC
         # Range of optical flow: [-5, 5]
-        
-        f01 = (f + 5) / 10  # [-5, 5] -> [0, 1]
-        M_norm = norm(f01, ord=2, axis=2)  # HWC
-        M_norm = M_norm / np.sqrt(2)  # [0, 1.414] -> [0, 1.]
+        U = np.clip(f[:, :, 0], -5, 5)
+        V = np.clip(f[:, :, 1], -5, 5)
+        M_norm = np.sqrt(np.square(U/5) + np.square(V/5)) / np.sqrt(2)  # [0, 1.414] -> [0, 1.]
+        M_norm = np.clip(M_norm, 0, 1)
+
+        f01 = (f + 5) / 10  # [-5, 5] -> [0, 10] -> [0, 1]
+
         rgb = np.concatenate([f01, M_norm[:, :, np.newaxis]], axis=2)
         rgb = rgb * 255.
         rgb = rgb.astype(np.uint8)
@@ -95,7 +99,7 @@ def v2f_wrapper(params):
     video2flow(video_relative_path, sample_root, flow_root)
 
 param_list = []
-avi_list = glob.glob(str(Path(sample_root, '**', '*.avi')), recursive=True)
+avi_list = glob.glob(str(Path(sample_root, '**', 'M_*.avi')), recursive=True)
 for video in tqdm(avi_list):
     video = Path(video)
     name = video.name
@@ -104,7 +108,9 @@ for video in tqdm(avi_list):
     video_relative_path = Path(name_of_set, xxx, name)
     param_list.append((video_relative_path, sample_root, flow_root))
 
-pool = Pool(16)
-pool.map(v2f_wrapper, param_list)
-# for p in param_list:
-#     v2f_wrapper(p)
+if cfg.DEBUG:
+    for p in tqdm(param_list):
+        v2f_wrapper(p)
+else:
+    pool = Pool(cfg.NUM_CPU)
+    pool.map(v2f_wrapper, param_list)

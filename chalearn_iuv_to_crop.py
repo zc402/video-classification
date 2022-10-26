@@ -42,7 +42,8 @@ def load_flow(body_img_path):
             flow = cv2.imread(str(flow_path))
         else:
             # TODO: fix 00000.jpg (rerun video to flow) and raise exception here
-            flow = np.zeros((60, 80, 3), dtype=np.uint8) + 127
+            # flow = np.zeros((60, 80, 3), dtype=np.uint8) + 127
+            raise Exception('An image has RGB but no flow')
         flow_compact.append(flow)
     flow_compact = np.stack(flow_compact)  # NHWC
     flow_compact = np.mean(flow_compact, axis=0)
@@ -222,7 +223,7 @@ def extract_crop(name_of_set):
 
     multithread = True
     if multithread:
-        pool = Pool(10)  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
+        pool = Pool(min(10, cfg.NUM_CPU))  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
         pool.map(task_wrapper, param_list)
     else:
         for param in tqdm(param_list):
