@@ -96,11 +96,11 @@ class ModelManager():
     def _init_slowfast_model(self):
         model = create_slowfast(
             # SlowFast configs.
-            slowfast_channel_reduction_ratio = (4, 4,),
+            slowfast_channel_reduction_ratio = (4, 4, 4,),  # If slow has 64 channels, fast has 16 channels, then 64/16=4
             slowfast_conv_channel_fusion_ratio = 0,  # 2*2: 2 fast 
             model_depth=50,
             model_num_class=self.cfg.CHALEARN.NUM_CLASS,
-            input_channels=(5, 3, 1),
+            input_channels=(3, 2, 3, 1),
             fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder().create_module,
 
             # slowfast_fusion_conv_stride=(1,1,1),
@@ -111,34 +111,44 @@ class ModelManager():
                 create_res_basic_stem,
                 create_res_basic_stem,
                 create_res_basic_stem,
+                create_res_basic_stem,
             ),
-            stem_dim_outs=(64, 16, 16),  # (slow, fast, fast)
-            stem_conv_kernel_sizes = ((1, 7, 7), (1, 7, 7), (1, 7, 7)),
-            stem_conv_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2)),
-            stem_pool = (nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d),
-            stem_pool_kernel_sizes = ((1, 3, 3), (1, 3, 3), (1, 3, 3)),
-            stem_pool_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2)),
+            stem_dim_outs=(64, 16, 16, 16),  # (slow, fast, fast)
+            stem_conv_kernel_sizes = ((1, 7, 7), (1, 7, 7), (1, 7, 7), (1, 7, 7)),
+            stem_conv_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2), (1, 2, 2)),
+            stem_pool = (nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d),
+            stem_pool_kernel_sizes = ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
+            stem_pool_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2), (1, 2, 2)),
             
             # Stage configs.
             stage_conv_a_kernel_sizes = (
                 ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-                ((3, 1, 1), (3, 1, 1), (3, 1, 1), (3, 1, 1)),
-                ((3, 1, 1), (3, 1, 1), (3, 1, 1), (3, 1, 1)),
+                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
+                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
+                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
             ),
             stage_conv_b_kernel_sizes = (
                 ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
                 ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
                 ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
+                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
             ),
-            stage_conv_b_num_groups = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
+            stage_conv_b_num_groups = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
             stage_conv_b_dilations = (
                 ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
                 ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
                 ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
+                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
             ),
-            stage_spatial_strides = ((1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2)),
-            stage_temporal_strides = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
+            stage_spatial_strides = ((1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2)),
+            stage_temporal_strides = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
             bottleneck = (
+                (
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                    create_bottleneck_block,
+                ),
                 (
                     create_bottleneck_block,
                     create_bottleneck_block,
@@ -159,7 +169,7 @@ class ModelManager():
                 ),
             ),
             # Head configs.
-            head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1), (8, 1, 1)),
+            head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1), (8, 1, 1), (8, 1, 1)),
         )
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
@@ -179,12 +189,13 @@ class ModelManager():
     def _prepare_slowfast_data(self, batch):
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        x_rgbuv = x[:, 0:5]
+        x_rgb = x[:, 0:3]
+        x_uv = x[:, 3:5]
         x_flow = x[:, 5:8]
         x_depth = x[:, 8:9]
         
         y_true = batch['label'].cuda()
-        return [x_rgbuv, x_flow, x_depth], y_true
+        return [x_rgb, x_uv, x_flow, x_depth], y_true
 
 class Trainer():
 
@@ -241,7 +252,7 @@ class Trainer():
         ckpt = ckpt_list[-1]
         print(f'loading checkpoint from {str(ckpt)}')
         state_dict = torch.load(ckpt)
-        self.model.load_state_dict(state_dict, strict=True)
+        self.model.load_state_dict(state_dict, strict=False)
         pass
 
     def train_epoch(self):
