@@ -62,7 +62,7 @@ def to_iuv(cfg, name_of_set):
     for i, xxx_folder in enumerate(xxx_folders):
         param_list.append((i, xxx_folder, name_of_set))
 
-    if False:
+    if True:
         for param in tqdm(param_list):
             to_iuv_one_folder_wrap(param)
     else:
