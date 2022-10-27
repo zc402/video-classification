@@ -1,11 +1,17 @@
+from pathlib import Path
 import sys
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 
-sys.path.append("/home/zc/NutstoreFiles/Projects/deep-learning/detectron2/projects/DensePose/")
+from config.defaults import get_override_cfg
 
-dumpfile = '/media/zc/C2000Pro-1TB/ChaLearnIsoLess/4_CSE/train/007.pkl'
+cfg = get_override_cfg()
+
+densepose = Path(cfg.DENSEPOSE).absolute()
+sys.path.append(str(densepose))
+
+dumpfile = '/media/zc/C2000Pro-1TB/ChaLearnIsoLess/4_IUV/train/029.pkl'
 with open(dumpfile, 'rb') as f:
     result = pickle.load(f)
 

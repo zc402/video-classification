@@ -16,11 +16,11 @@ from pytorchvideo.models.slowfast import create_slowfast
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d
 from torch import optim
 from torch.nn import CrossEntropyLoss, Module, Linear, Conv2d, Conv3d, Identity
-from config.defaults import get_override_cfg
+from config.defaults import get_cfg, get_override_cfg
 from torch.utils.data.dataloader import default_collate
 import os
 
-from model.my_fusion_builder import MyFastToSlowFusionBuilder
+from model.my_slowfast import init_my_slowfast
 os.environ["HTTPS_PROXY"] = "http://127.0.0.1:20170"
 os.environ["HTTP_PROXY"] = "http://127.0.0.1:20170"
 import torch.nn as nn
@@ -94,92 +94,17 @@ class ModelManager():
     
     # ----------slow_fast------------------
     def _init_slowfast_model(self):
-        model = create_slowfast(
-            # SlowFast configs.
-            slowfast_channel_reduction_ratio = (4, 4, 4,),  # If slow has 64 channels, fast has 16 channels, then 64/16=4
-            slowfast_conv_channel_fusion_ratio = 0,  # 2*2: 2 fast 
-            model_depth=50,
-            model_num_class=self.cfg.CHALEARN.NUM_CLASS,
-            input_channels=(3, 2, 3, 1),
-            fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder().create_module,
-
-            # slowfast_fusion_conv_stride=(1,1,1),
-            # slowfast_fusion_conv_kernel_size=(7, 1, 1),
-
-            # Stem configs.
-            stem_function = (
-                create_res_basic_stem,
-                create_res_basic_stem,
-                create_res_basic_stem,
-                create_res_basic_stem,
-            ),
-            stem_dim_outs=(64, 16, 16, 16),  # (slow, fast, fast)
-            stem_conv_kernel_sizes = ((1, 7, 7), (1, 7, 7), (1, 7, 7), (1, 7, 7)),
-            stem_conv_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2), (1, 2, 2)),
-            stem_pool = (nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d),
-            stem_pool_kernel_sizes = ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-            stem_pool_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2), (1, 2, 2)),
-            
-            # Stage configs.
-            stage_conv_a_kernel_sizes = (
-                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-                ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-            ),
-            stage_conv_b_kernel_sizes = (
-                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-                ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-            ),
-            stage_conv_b_num_groups = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
-            stage_conv_b_dilations = (
-                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-                ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-            ),
-            stage_spatial_strides = ((1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2)),
-            stage_temporal_strides = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
-            bottleneck = (
-                (
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                ),
-                (
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                ),
-                (
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                ),
-                (
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                    create_bottleneck_block,
-                ),
-            ),
-            # Head configs.
-            head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1), (8, 1, 1), (8, 1, 1)),
-        )
+        model = init_my_slowfast(self.cfg, (5, 1), (64, 8,))
+        
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
         del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
         del state_dict['blocks.6.proj.weight']
         del state_dict['blocks.6.proj.bias']
-
-        for key in list(state_dict.keys()):
-            if 'multipathway_blocks' in key:
-                del state_dict[key]
+        del state_dict['blocks.0.multipathway_blocks.1.conv.weight']
+        # for key in list(state_dict.keys()):
+        #     if 'multipathway_blocks' in key:
+        #         del state_dict[key]
         
 
         model.load_state_dict(state_dict, strict=False)
@@ -189,20 +114,21 @@ class ModelManager():
     def _prepare_slowfast_data(self, batch):
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        x_rgb = x[:, 0:3]   # plt.imshow(x_rgb.cpu()[0,:,0].permute((1,2,0)))
-        x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
+        # x_rgb = x[:, 0:3]   # plt.imshow(x_rgb.cpu()[0,:,0].permute((1,2,0)))
+        # x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
+        x_rgbuv = x[:, 0:5]
         x_flow = x[:, 5:8]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
         x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
         
         y_true = batch['label'].cuda()
-        return [x_rgb, x_uv, x_flow, x_depth], y_true
+        return [x_rgbuv, x_depth], y_true  # x_uv, x_flow, 
 
 class Trainer():
 
     def __init__(self, cfg):
         self.debug = cfg.DEBUG
         if not self.debug:
-            self.num_workers = 10
+            self.num_workers = min(cfg.NUM_CPU, 10)
             self.save_debug_img = False
         else:  # Debug
             self.num_workers = 0
@@ -222,37 +148,50 @@ class Trainer():
         self.mm = ModelManager(cfg)
         self.model = self.mm.init_model()
         self.loss = CrossEntropyLoss()
-        self.optim = optim.Adam(self.model.parameters(), lr=cfg.MODEL.LR)
         
         self.num_step = 0
-        self.ckpt_dir = Path(cfg.MODEL.CKPT_DIR, cfg.MODEL.NAME)
+        self.ckpt_dir = Path(cfg.CHALEARN.ROOT, cfg.MODEL.LOGS, cfg.MODEL.CKPT_DIR, cfg.MODEL.NAME)
         self.num_class = cfg.CHALEARN.SAMPLE_CLASS
         self.max_historical_acc = 0.
 
         self.load_ckpt()
+
+        self.optim = optim.Adam(self.model.parameters(), lr=cfg.MODEL.LR)
         
 
     def save_ckpt(self, epoch=0, acc=0.0):
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_name = 'acc%.02f_e%d.ckpt' % (acc, epoch)
+        ckpt_name = 'acc%.3f_e%d.ckpt' % (acc, epoch)
         # ckpt_name = f'acc{round(acc, 2)}_e{epoch}.ckpt'
         ckpt_path = Path(self.ckpt_dir, ckpt_name)
-        torch.save(self.model.state_dict(), ckpt_path)
-        print(f"Checkpoint saved in {str(ckpt_path)}")
+        
+        if not self.debug:
+            torch.save(self.model.state_dict(), ckpt_path)
+            print(f"Checkpoint saved in {str(ckpt_path)}")
+        else:
+            print(f'Ignore checkpoint saving under debug mode. {str(ckpt_path)}')
+        
 
     def load_ckpt(self):
         ckpt_list = sorted(glob.glob(str(self.ckpt_dir / '*.ckpt')))
         if len(ckpt_list) == 0:
             print('warning: no checkpoint found, try using HTAH ckeckpoint')
             # Use HTAH checkpoint:
-            ckpt_list = sorted(glob.glob(str(Path(self.cfg.MODEL.CKPT_DIR, 'slowfast-HTAH', '*.ckpt'))))
+            ckpt_list = sorted(glob.glob(str(Path(self.ckpt_dir.parent, 'slowfast-HTAH', '*.ckpt'))))
             if len(ckpt_list) == 0:
                 print('warning: no HTAH checkpoint found')
                 return
         ckpt = ckpt_list[-1]
         print(f'loading checkpoint from {str(ckpt)}')
+        
         state_dict = torch.load(ckpt)
+        
+        for key in list(state_dict.keys()):
+            if 'multipathway_blocks' in key:
+                del state_dict[key]
+
         self.model.load_state_dict(state_dict, strict=False)
+
         pass
 
     def train_epoch(self):
@@ -291,13 +230,18 @@ class Trainer():
 
         c = torch.concat(correct_list, dim=0)
         accuracy = c.sum() / len(c)
-        print(f'Train Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
+        print(f'Train Accuracy: {round(accuracy.item(), 3)}. ({c.sum().item()} / {len(c)})')
         
     
     def train(self):
         
-        for epoch in range(100):
-            print(f'Epoch {epoch}')
+        if not self.debug:
+            max_epoch = self.cfg.MODEL.MAX_EPOCH
+        else:
+            max_epoch = 3
+
+        for epoch in range(max_epoch):
+            print(f'========== Training epoch {epoch}')
             self.num_step = 0
             self.train_epoch()
 
@@ -307,11 +251,15 @@ class Trainer():
             #     self.max_historical_acc = acc
             #     self.save_ckpt(epoch, acc)
             
-            if (epoch) % 2 == 0:
+            if (epoch) % 1 == 0:
                 acc = self.test()
-                # if acc > self.max_historical_acc:
-                self.max_historical_acc = acc
-                self.save_ckpt(epoch, acc)
+                if acc > self.max_historical_acc:
+                    self.max_historical_acc = acc
+                    self.save_ckpt(epoch, acc)
+                print(f"Not saved. Current best acc: %.3f" % (self.max_historical_acc))
+                    
+        
+        self.save_ckpt(epoch, acc)
 
     # def valid(self):
     #     print("Validating ...")
@@ -331,7 +279,7 @@ class Trainer():
     #     return accuracy.item()
     
     def test(self):
-        print("Testing ...")
+        print("========== Testing ...")
         pred_list = []
         true_list = []
         batch_collect = []  # Collect a batch
@@ -363,7 +311,7 @@ class Trainer():
                 
                 test_batch(batch_full)
             
-            if self.debug and step > 10:
+            if self.debug and step > 5:
                 break
         
         # Last batch
@@ -383,7 +331,7 @@ class Trainer():
             
         c = np.array(correct_list)
         accuracy = c.sum() / len(c)
-        print(f'!! Test Accuracy: {round(accuracy, 2)}. ({c.sum()} / {len(c)})')
+        print(f'Test Accuracy: {round(accuracy, 3)}. ({c.sum()} / {len(c)})')
         return accuracy
     
     def debug_show(self, input):
@@ -400,10 +348,13 @@ class Trainer():
             print('image saved')
 
 if __name__ == '__main__':
-    train_cfg = get_override_cfg()
+    train_cfg = get_cfg()
     yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
     for yaml_name in yaml_list:
         train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
+        override = Path('..', 'cfg_override.yaml')
+        if(override.is_file()):  # override after loading local yaml
+            train_cfg.merge_from_file(override)
         trainer = Trainer(train_cfg)
         trainer.train()
     # train_cfg.merge_from_file(Path('config', 'slowfast-HTAH' + '.yaml'))

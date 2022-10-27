@@ -43,7 +43,7 @@ def load_flow(body_img_path):
         else:
             # TODO: fix 00000.jpg (rerun video to flow) and raise exception here
             # flow = np.zeros((60, 80, 3), dtype=np.uint8) + 127
-            raise Exception('An image has RGB but no flow')
+            raise Exception(f'An image has RGB but no flow. img: {body_img_path}, expected flow: {flow_path}')
         flow_compact.append(flow)
     flow_compact = np.stack(flow_compact)  # NHWC
     flow_compact = np.mean(flow_compact, axis=0)
@@ -189,6 +189,9 @@ def crop_body_bodyparts(iuv, name_of_set, pad_root, crop_body_root):
         file_path = Path(file_path)
         x_img = file_path.name  # 00000.jpg
         x5 = file_path.parent.name  # M_00068
+        if 'K_' in x5:
+            print(f'warning: iuv should not parse K_ for {file_path}')
+            continue
         x3 = Path(iuv).stem  # 001
         x3x5img = Path(x3, x5, x_img)  # 001/M_00068/00000.jpg
         nsetx3x5img = Path(name_of_set, x3x5img)

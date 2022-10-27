@@ -116,7 +116,7 @@ class ChalearnVideoDataset(Dataset):
             clips.append(self.random_sampling(seq_len, clip_len))
         else:
             t = 0
-            for t in range(seq_len - clip_len):
+            for t in range(0, seq_len - clip_len, 4):
                 clip_indices = range(t, t + clip_len)
                 clips.append(clip_indices)
         return clips

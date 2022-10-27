@@ -16,8 +16,14 @@ cfg = get_override_cfg()
 densepose = Path(cfg.DENSEPOSE)
 # sys.path.append(str(densepose))
 apply_net = Path(densepose, 'apply_net.py')
-yaml_path = Path(densepose, 'configs', 'densepose_rcnn_R_50_FPN_s1x.yaml')
-model_download = Path('pretrained', 'model_final_162be9.pkl').absolute()
+
+# R_50_FPN_s1x
+# yaml_path = Path(densepose, 'configs', 'densepose_rcnn_R_50_FPN_s1x.yaml')
+# model_download = Path('pretrained', 'model_final_162be9.pkl').absolute()
+
+# R_101_FPN_DL_s1x 	
+yaml_path = Path(densepose, 'configs', 'densepose_rcnn_R_101_FPN_DL_s1x.yaml')
+model_download = Path('pretrained', 'model_final_844d15.pkl').absolute()
 
 pad_root = Path(cfg.CHALEARN.ROOT ,cfg.CHALEARN.PAD)
 iuv_root = Path(cfg.CHALEARN.ROOT ,cfg.CHALEARN.IUV)
@@ -26,7 +32,7 @@ def to_iuv_one_folder(xxx_folder, name_of_set, ):
     xxx_name = Path(xxx_folder).name
     # avi_folders = glob.glob(str(Path(xxx_folder, "M_*")))
     # imgs = glob.glob(str(Path(xxx_folder, "M_*", "*.jpg")))
-    jpg_wildcard = Path(xxx_folder, "**", "*.jpg")
+    jpg_wildcard = Path(xxx_folder, "M_*", "*.jpg")
     jpg_wildcard = str(jpg_wildcard)
     output_path = Path(iuv_root, name_of_set, xxx_name + '.pkl')
     if output_path.exists():
@@ -56,7 +62,7 @@ def to_iuv(cfg, name_of_set):
     for i, xxx_folder in enumerate(xxx_folders):
         param_list.append((i, xxx_folder, name_of_set))
 
-    if cfg.DEBUG:
+    if False:
         for param in tqdm(param_list):
             to_iuv_one_folder_wrap(param)
     else:
