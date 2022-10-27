@@ -45,7 +45,9 @@ class ChalearnVideoDataset(Dataset):
                 std=[0.225] * self.num_data_modality_channels),
         ])
 
-
+        self.rgb_augment = transforms.Compose([
+            transforms.ColorJitter(brightness=0.5, hue=0.1, contrast=0.3, saturation=0.2)
+        ])
 
     def _pad_resize_img(self, img, new_size:int):  # Pad to square and resize
         if len(img.shape) == 2:
@@ -65,14 +67,17 @@ class ChalearnVideoDataset(Dataset):
         """
         Data augmentation for training
         """
+
         for (folder, size) in crop_resize_dict.items():
             if folder in feature_dict.keys():
                 padding = size // 10
 
-                augment = transforms.Compose([
+                position_augment = transforms.Compose([
                     transforms.RandomCrop(size, padding)
                 ])
-                feature_dict[folder] = augment(feature_dict[folder])
+                feature_dict[folder] = position_augment(feature_dict[folder])
+
+                # feature_dict[folder][:, 0:3,] = self.rgb_augment(feature_dict[folder][:, 0:3,])  # aug RGB channels
 
 
     def _get_image_features(self, nsetx3x5img:Path):

@@ -34,6 +34,8 @@ from config.crop_cfg import crop_folder_list
 
 torch.multiprocessing.set_sharing_strategy('file_system')  # Solve the "received 0 items of ancdata" error
 
+# To be improved: 1. mask loss when hand image not detected. * color jitter decreases test acc but do not affect train acc? 
+
 class ModelManager():
 
     def __init__(self, cfg):
@@ -114,14 +116,14 @@ class ModelManager():
     def _prepare_slowfast_data(self, batch):
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        # x_rgb = x[:, 0:3]   # plt.imshow(x_rgb.cpu()[0,:,0].permute((1,2,0)))
-        # x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
-        x_rgbuv = x[:, 0:5]
+        x_bgr = x[:, 0:3]   # plt.imshow(x_bgr.cpu()[0,:,0].permute((1,2,0)))
+        x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
+        x_bgruv = x[:, 0:5]
         x_flow = x[:, 5:8]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
         x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
         
         y_true = batch['label'].cuda()
-        return [x_rgbuv, x_depth], y_true  # x_uv, x_flow, 
+        return [x_bgruv, x_depth], y_true  # x_uv, x_flow, 
 
 class Trainer():
 
@@ -186,9 +188,9 @@ class Trainer():
         
         state_dict = torch.load(ckpt)
         
-        for key in list(state_dict.keys()):
-            if 'multipathway_blocks' in key:
-                del state_dict[key]
+        # for key in list(state_dict.keys()):
+        #     if 'multipathway_blocks' in key:
+        #         del state_dict[key]
 
         self.model.load_state_dict(state_dict, strict=False)
 
@@ -256,7 +258,8 @@ class Trainer():
                 if acc > self.max_historical_acc:
                     self.max_historical_acc = acc
                     self.save_ckpt(epoch, acc)
-                print(f"Not saved. Current best acc: %.3f" % (self.max_historical_acc))
+                else:
+                    print(f"Not saved. Current best acc: %.3f" % (self.max_historical_acc))
                     
         
         self.save_ckpt(epoch, acc)
