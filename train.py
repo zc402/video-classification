@@ -96,7 +96,7 @@ class ModelManager():
     
     # ----------slow_fast------------------
     def _init_slowfast_model(self):
-        model = init_my_slowfast(self.cfg, (5, 1), (64, 8,))
+        model = init_my_slowfast(self.cfg, (5, 3), (64, 8,))
         
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
@@ -123,7 +123,7 @@ class ModelManager():
         x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
         
         y_true = batch['label'].cuda()
-        return [x_bgruv, x_depth], y_true  # x_uv, x_flow, 
+        return [x_bgruv, x_flow], y_true  # x_uv, x_flow, 
 
 class Trainer():
 
