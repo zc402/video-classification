@@ -16,6 +16,8 @@ import sys
 from numpy.linalg import norm 
 import io
 
+
+
 def flow(im1, im2):
 
     im1 = im1.astype(float) / 255.
@@ -67,15 +69,19 @@ def video2flow(video_relative_path, video_root, flow_root):
 
         flow_list.append(y)
     
+    UV_max = 0
+    
     for frame_num, f in enumerate(flow_list):
         # f: HWC
         # Range of optical flow: [-5, 5]
         U = np.clip(f[:, :, 0], -5, 5)
         V = np.clip(f[:, :, 1], -5, 5)
+        # UV_max = max(UV_max, U.max(), V.max())
+        # print(UV_max)
         M_norm = np.sqrt(np.square(U/5) + np.square(V/5)) / np.sqrt(2)  # [0, 1.414] -> [0, 1.]
         M_norm = np.clip(M_norm, 0, 1)
 
-        f01 = (f + 5) / 10  # [-5, 5] -> [0, 10] -> [0, 1]
+        f01 = (np.clip(f, -5, 5) + 5) / 10  # [-5, 5] -> [0, 10] -> [0, 1]
 
         rgb = np.concatenate([f01, M_norm[:, :, np.newaxis]], axis=2)
         rgb = rgb * 255.

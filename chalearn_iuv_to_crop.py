@@ -42,8 +42,9 @@ def load_flow(body_img_path):
             flow = cv2.imread(str(flow_path))
         else:
             # TODO: fix 00000.jpg (rerun video to flow) and raise exception here
-            # flow = np.zeros((60, 80, 3), dtype=np.uint8) + 127
-            raise Exception(f'An image has RGB but no flow. img: {body_img_path}, expected flow: {flow_path}')
+            # flow = np.zeros((60, 80, 3), dtype=np.uint8) + np.array((127, 127, 0), np.int8)[np.newaxis, np.newaxis, :]
+            flow = np.zeros((60, 80, 3), np.uint8) + 127
+            # raise Exception(f'An image has RGB but no flow. img: {body_img_path}, expected flow: {flow_path}')
         flow_compact.append(flow)
     flow_compact = np.stack(flow_compact)  # NHWC
     flow_compact = np.mean(flow_compact, axis=0)

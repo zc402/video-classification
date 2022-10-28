@@ -72,3 +72,5 @@ def to_iuv(cfg, name_of_set):
 to_iuv(cfg, 'train')
 to_iuv(cfg, 'test')
 to_iuv(cfg, 'valid')
+
+# TODO: the pkl is saved as GPU data, which affect subsequent steps. should read them out and put into CPU, then save pickle.
