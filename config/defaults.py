@@ -5,7 +5,7 @@ _C = CfgNode()
 
 _C.CHALEARN = CfgNode()
 
-_C.DEBUG = True  # Use single thread, do not save checkpoint
+_C.DEBUG = False  # Use single thread, do not save checkpoint
 _C.CHALEARN.ROOT = '/media/zc/C2000Pro-1TB/ChaLearnIsoLess'  # The root of all other folders
 
 _C.CHALEARN.NUM_CLASS = 249  # Default number of classes, labels: 1~249
