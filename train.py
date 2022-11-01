@@ -95,19 +95,39 @@ class ModelManager():
     #     return x, y_true
     
     # ----------slow_fast------------------
+
+    def delete_mismatch(self, state_dict):
+        layers = [
+            'blocks.0.multipathway_blocks.0.conv.weight',
+            'blocks.6.proj.weight',
+            'blocks.6.proj.bias',
+            'blocks.0.multipathway_blocks.1.conv.weight',
+            'blocks.1.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.1.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.2.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.2.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.3.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.3.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.4.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.4.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+        ]
+        for key in layers:
+            del state_dict[key]
+        return state_dict
+
     def _init_slowfast_model(self):
-        model = init_my_slowfast(self.cfg, (5, 3), (64, 8,))
+        model = init_my_slowfast(self.cfg, (3, 2, 3, 1), (64, 8, 8, 8))
         
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
-        del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
-        del state_dict['blocks.6.proj.weight']
-        del state_dict['blocks.6.proj.bias']
-        del state_dict['blocks.0.multipathway_blocks.1.conv.weight']
+        # del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
+        # del state_dict['blocks.6.proj.weight']
+        # del state_dict['blocks.6.proj.bias']
+        # del state_dict['blocks.0.multipathway_blocks.1.conv.weight']
         # for key in list(state_dict.keys()):
         #     if 'multipathway_blocks' in key:
         #         del state_dict[key]
-        
+        state_dict = self.delete_mismatch(state_dict)
 
         model.load_state_dict(state_dict, strict=False)
         model.cuda()
@@ -118,12 +138,12 @@ class ModelManager():
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         x_bgr = x[:, 0:3]   # plt.imshow(x_bgr.cpu()[0,:,0].permute((1,2,0)))
         x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
-        x_bgruv = x[:, 0:5]
+        # x_bgruv = x[:, 0:5]
         x_flow = x[:, 5:8]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
         x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
         
         y_true = batch['label'].cuda()
-        return [x_bgruv, x_flow], y_true  # x_uv, x_flow, 
+        return [x_bgr, x_uv, x_flow, x_depth], y_true  # x_uv, x_flow, 
 
 class Trainer():
 

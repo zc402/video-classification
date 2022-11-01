@@ -15,6 +15,7 @@ import sys
 from numpy.linalg import norm 
 import matplotlib.pyplot as plt
 
+
 cfg = get_override_cfg()
 flow_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.FLOW)
 sample_video_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.SAMPLE)  # Videos with class number sampled
@@ -54,13 +55,16 @@ def video2images(video: Path):
         #     file_number = int(Path(flow_file).stem)
         #     filtered_imgs.append(file_number)
     materials.sort(key=lambda x: x[1])  
-    for i in range(int(len(materials) * keep)):
+    num_keep = int(len(materials) * keep)
+    num_keep = max(8, num_keep)  # At least keep 8 frames
+    num_keep = min(len(materials), num_keep)  # No more than video length
+    for _ in range(num_keep):
         filte_img_path = materials.pop()[0]  # pop last (largest energy)
         file_number = int(Path(filte_img_path).stem)
         filtered_imgs.append(file_number)
 
     if len(filtered_imgs) == 0:
-        print("empty folder")
+        print(f"empty folder: {video}")
 
     frame_num = 0
     cap = cv2.VideoCapture(str(video))
@@ -79,8 +83,14 @@ shutil.rmtree(img_energy_root, ignore_errors=True)
 avi_list = glob.glob(str(Path(sample_video_root, '**', 'M_*.avi')), recursive=True)
 
 params = []
-for video in tqdm(avi_list):
+for video in avi_list:
     params.append((video))
-    video2images(video)  # 001/K_00001
+
+if cfg.DEBUG:
+    for video in tqdm(avi_list):
+        video2images(video)  # 001/K_00001
+else:
+    pool = Pool(cfg.NUM_CPU)
+    pool.map(video2images, params)
 
 pass

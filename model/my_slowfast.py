@@ -86,7 +86,7 @@ def init_my_slowfast(cfg, input_channels, stem_dim_outs):
     fuse = cfg.MODEL.FUSE
     if fuse:
         fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder(slowfast_channel_reduction_ratio[0]).create_module
-        slowfast_conv_channel_fusion_ratio = 2 * (num_c - 1)
+        slowfast_conv_channel_fusion_ratio = 2 # * (num_c - 1)
     else:
         fusion_builder = nn.Identity
         slowfast_conv_channel_fusion_ratio = 0
@@ -242,23 +242,36 @@ class FuseFastToSlow(nn.Module):
         super().__init__()
         set_attributes(self, locals())
 
-    def forward(self, x):
-        # return x  # No fusion
-        x_s = x[0]
-        x_f1 = x[1]
-        # x_f2 = x[2]
+    # def forward(self, x):
+    #     # return x  # No fusion
+    #     x_s = x[0]
+    #     x_f1 = x[1]
+    #     # x_f2 = x[2]
         
-        fuse_l = []
-        for x_f in [x_f1, ]: # x_f2
-            fuse = self.conv_fast_to_slow(x_f)
-            if self.norm is not None:
-                fuse = self.norm(fuse)
-            if self.activation is not None:
-                fuse = self.activation(fuse)
-            fuse_l.append(fuse)
-        # x_s_fuse = torch.cat([x_s, fuse], 1)
-        x_s_fuse = torch.cat([x_s, fuse_l[0]], dim=1)  # , fuse_l[1]
-        return [x_s_fuse, x_f1]  # , x_f2
+    #     fuse_l = []
+    #     for x_f in [x_f1, ]: # x_f2
+    #         fuse = self.conv_fast_to_slow(x_f)
+    #         if self.norm is not None:
+    #             fuse = self.norm(fuse)
+    #         if self.activation is not None:
+    #             fuse = self.activation(fuse)
+    #         fuse_l.append(fuse)
+    #     # x_s_fuse = torch.cat([x_s, fuse], 1)
+    #     x_s_fuse = torch.cat([x_s, fuse_l[0]], dim=1)  # , fuse_l[1]
+    #     return [x_s_fuse, x_f1]  # , x_f2
+    def forward(self, x):
+        x_s = x[0]
+        if len(x[1:]) == 1:
+            x_f = x[1]
+        else:
+            x_f = torch.sum(torch.stack(x[1:]), dim=0)
+        fuse = self.conv_fast_to_slow(x_f)
+        if self.norm is not None:
+            fuse = self.norm(fuse)
+        if self.activation is not None:
+            fuse = self.activation(fuse)
+        x_s_fuse = torch.cat([x_s, fuse], 1)
+        return [x_s_fuse, *x[1:]]
 
 """
 model = create_slowfast(

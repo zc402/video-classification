@@ -59,7 +59,7 @@ def load_flow(body_img_path):
 
     return flow_compact
 
-def crop_body(img_path, target_path, bbox):
+def crop_body(img_path:Path, target_path:Path, bbox):
     flow = load_flow(img_path)  # (60, 80, 3)
     # if Path(target_path).exists():
     #     return  # Do not overwrite
@@ -68,6 +68,7 @@ def crop_body(img_path, target_path, bbox):
     #     cv2.imwrite(str(target_path), black)
     #     return
     x1, y1, x2, y2 = bbox
+    assert img_path.exists()
     img = cv2.imread(str(img_path))  # H W C
     cropped = img[y1:y2, x1:x2, :]
     cv2.imwrite(str(target_path), cropped)
@@ -86,6 +87,7 @@ def crop_body(img_path, target_path, bbox):
     # Depth modality
     depth_folder = img_path.parent.name.replace('M_', 'K_')
     depth_path = Path(img_path.parent.parent, depth_folder, img_path.name)
+    assert depth_path.exists()
     depth_img = cv2.imread(str(depth_path))
     crop_depth = depth_img[y1:y2, x1:x2, :]
     depth_target_name = 'D_' + target_path.name
@@ -225,13 +227,13 @@ def extract_crop(name_of_set):
 
     param_list = [(iuv, name_of_set, pad_root, crop_body_root) for iuv in iuv_list]
 
-    multithread = True
-    if multithread:
-        pool = Pool(min(10, cfg.NUM_CPU))  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
-        pool.map(task_wrapper, param_list)
-    else:
+    if cfg.DEBUG == True:
         for param in tqdm(param_list):
             task_wrapper(param)
+    else:
+        pool = Pool(min(10, cfg.NUM_CPU))  # The data is loaded into GPU, therefore 10 is largest for a 24GB memory GPU
+        pool.map(task_wrapper, param_list)
+        
 
     print(f"{name_of_set} set done")
 
