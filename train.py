@@ -61,25 +61,19 @@ class ModelManager():
 
     # # -----------res2d----------------------
 
-    # def _init_res2d_model(self):
-    #     channels_RGB = [3 for _ in crop_folder_list]
-    #     channels_UV = [2 for _ in crop_folder_list]
-    #     channels_list = channels_RGB + channels_UV
-    #     model = MultipleResnet(self.cfg, channels_list).cuda()
-    #     return model
+    def _init_res2d_model(self):
+        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
+        model.conv1 = Conv2d(50, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        model.cuda()
+        return model
 
-    # def _prepare_res2d_data(self, batch):
-    #     """Prepare data from batch to forward(x)"""
-    #     batch = {k: x.cuda() for k, x in batch.items()}
-    #     # Clip C from NTCHW
-    #     image_features_RGB = [batch[folder][:, :, 0:3] for folder in crop_folder_list]
-    #     image_features_UV = [batch[folder][:, :, 3:5] for folder in crop_folder_list]
-    #     image_features = image_features_RGB + image_features_UV
-    #     y_true = batch['label']
-
-    #     # if self.save_debug_img:
-    #     #     self.debug_show(batch['CropHTAH'])  # NTCHW     
-    #     return image_features, y_true
+    def _prepare_res2d_data(self, batch):
+        """Prepare data from batch to forward(x)"""
+        x = batch[self.cfg.MODEL.R3D_INPUT][:, :, :5].cuda()  # NTCHW. C: bgruv
+        N,T,C,H,W = x.size()
+        x = torch.reshape(x, (N, T*C, H, W)) 
+        y_true = batch['label'].cuda()
+        return x, y_true
     
     # # -----------res3d----------------------
     # def _init_res3d_model(self):
@@ -116,17 +110,11 @@ class ModelManager():
         return state_dict
 
     def _init_slowfast_model(self):
-        model = init_my_slowfast(self.cfg, (3, 2, 3, 1), (64, 8, 8, 8))
+        model = init_my_slowfast(self.cfg, (3, 2, 3,), (64, 8, 8,))
         
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
-        # del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
-        # del state_dict['blocks.6.proj.weight']
-        # del state_dict['blocks.6.proj.bias']
-        # del state_dict['blocks.0.multipathway_blocks.1.conv.weight']
-        # for key in list(state_dict.keys()):
-        #     if 'multipathway_blocks' in key:
-        #         del state_dict[key]
+
         state_dict = self.delete_mismatch(state_dict)
 
         model.load_state_dict(state_dict, strict=False)
@@ -140,10 +128,13 @@ class ModelManager():
         x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
         # x_bgruv = x[:, 0:5]
         x_flow = x[:, 5:8]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
-        x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
-        
+        # x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
+        # 分别合并RGB和其它模态
+        # bgr_uv = torch.cat([x_bgr, x_uv], dim=1)
+        # bgr_flow = torch.cat([x_bgr, x_flow], dim=1)
+        # bgr_depth = torch.cat([x_bgr, x_depth], dim=1)
         y_true = batch['label'].cuda()
-        return [x_bgr, x_uv, x_flow, x_depth], y_true  # x_uv, x_flow, 
+        return [x_bgr, x_uv, x_flow], y_true  # x_uv, x_flow,  
 
 class Trainer():
 
@@ -207,11 +198,7 @@ class Trainer():
         print(f'loading checkpoint from {str(ckpt)}')
         
         state_dict = torch.load(ckpt)
-        
-        # for key in list(state_dict.keys()):
-        #     if 'multipathway_blocks' in key:
-        #         del state_dict[key]
-
+        # del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
         self.model.load_state_dict(state_dict, strict=False)
 
         pass
@@ -372,13 +359,14 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_cfg()
-    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
-    for yaml_name in yaml_list:
-        train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
-        override = Path('..', 'cfg_override.yaml')
-        if(override.is_file()):  # override after loading local yaml
-            train_cfg.merge_from_file(override)
-        trainer = Trainer(train_cfg)
-        trainer.train()
-    # train_cfg.merge_from_file(Path('config', 'slowfast-HTAH' + '.yaml'))
+    # yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
+    # for yaml_name in yaml_list:
+    #     train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
+    #     override = Path('..', 'cfg_override.yaml')
+    #     if(override.is_file()):  # override after loading local yaml
+    #         train_cfg.merge_from_file(override)
+    #     trainer = Trainer(train_cfg)
+    #     trainer.train()
+    train_cfg.merge_from_file(Path('config', 'slowfast-HTAH.yaml'))
+    
     Trainer(train_cfg).train()

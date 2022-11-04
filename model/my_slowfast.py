@@ -86,7 +86,7 @@ def init_my_slowfast(cfg, input_channels, stem_dim_outs):
     fuse = cfg.MODEL.FUSE
     if fuse:
         fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder(slowfast_channel_reduction_ratio[0]).create_module
-        slowfast_conv_channel_fusion_ratio = 2 # * (num_c - 1)
+        slowfast_conv_channel_fusion_ratio = 2*(num_c - 1)
     else:
         fusion_builder = nn.Identity
         slowfast_conv_channel_fusion_ratio = 0
@@ -181,27 +181,50 @@ class MyFastToSlowFusionBuilder:
         if stage_idx > self.max_stage_idx:
             return nn.Identity()
 
-        conv_dim_in = fusion_dim_in // self.slowfast_channel_reduction_ratio
-        conv_fast_to_slow = nn.Conv3d(
-            conv_dim_in,
-            int(conv_dim_in * self.conv_fusion_channel_ratio),
+        slow_in_channels = fusion_dim_in
+        slow_out_channels = slow_in_channels
+        fast_in_channels = fusion_dim_in // self.slowfast_channel_reduction_ratio
+        fast_out_channels = int(fast_in_channels * self.conv_fusion_channel_ratio)
+        num_fast_ways = 2
+        fuse_out_channels = slow_out_channels + (fast_out_channels * num_fast_ways)
+
+        # conv_dim_in = fusion_dim_in // self.slowfast_channel_reduction_ratio
+
+        
+        conv_fast_to_slow = nn.ModuleList([
+            nn.Conv3d(
+            fast_in_channels,
+            fast_out_channels,
             kernel_size=self.conv_kernel_size,
             stride=self.conv_stride,
             padding=[k_size // 2 for k_size in self.conv_kernel_size],
             bias=False,
-        )
-        norm_module = (
+        ) for _ in range(num_fast_ways)])
+
+        residual = nn.Conv3d(
+            slow_in_channels, 
+            fuse_out_channels,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False)
+
+        norm_module = nn.ModuleList([
             None
             if self.norm is None
             else self.norm(
-                num_features=conv_dim_in * self.conv_fusion_channel_ratio,
+                num_features=fast_in_channels * self.conv_fusion_channel_ratio,
                 eps=self.norm_eps,
                 momentum=self.norm_momentum,
-            )
-        )
-        activation_module = None if self.activation is None else self.activation()
+            ) for _ in range(num_fast_ways)])
+        
+        activation_module = nn.ModuleList([
+            None if self.activation is None else self.activation()
+            for _ in range(num_fast_ways)])
+
         return FuseFastToSlow(
             conv_fast_to_slow=conv_fast_to_slow,
+            residual=residual,
             norm=norm_module,
             activation=activation_module,
         )
@@ -229,9 +252,10 @@ class FuseFastToSlow(nn.Module):
 
     def __init__(
         self,
-        conv_fast_to_slow: nn.Module,
-        norm: Optional[nn.Module] = None,
-        activation: Optional[nn.Module] = None,
+        conv_fast_to_slow: nn.ModuleList,
+        residual: nn.Module,
+        norm: Optional[nn.ModuleList] = None,
+        activation: Optional[nn.ModuleList] = None,
     ) -> None:
         """
         Args:
@@ -242,113 +266,39 @@ class FuseFastToSlow(nn.Module):
         super().__init__()
         set_attributes(self, locals())
 
-    # def forward(self, x):
-    #     # return x  # No fusion
-    #     x_s = x[0]
-    #     x_f1 = x[1]
-    #     # x_f2 = x[2]
-        
-    #     fuse_l = []
-    #     for x_f in [x_f1, ]: # x_f2
-    #         fuse = self.conv_fast_to_slow(x_f)
-    #         if self.norm is not None:
-    #             fuse = self.norm(fuse)
-    #         if self.activation is not None:
-    #             fuse = self.activation(fuse)
-    #         fuse_l.append(fuse)
-    #     # x_s_fuse = torch.cat([x_s, fuse], 1)
-    #     x_s_fuse = torch.cat([x_s, fuse_l[0]], dim=1)  # , fuse_l[1]
-    #     return [x_s_fuse, x_f1]  # , x_f2
     def forward(self, x):
-        x_s = x[0]
-        if len(x[1:]) == 1:
-            x_f = x[1]
-        else:
-            x_f = torch.sum(torch.stack(x[1:]), dim=0)
-        fuse = self.conv_fast_to_slow(x_f)
-        if self.norm is not None:
-            fuse = self.norm(fuse)
-        if self.activation is not None:
-            fuse = self.activation(fuse)
-        x_s_fuse = torch.cat([x_s, fuse], 1)
-        return [x_s_fuse, *x[1:]]
+        # return x  # No fusion
+        x_s = x[0]  # x slow layer
+        x_fs = x[1:]  # x fast layers
 
-"""
-model = create_slowfast(
-# SlowFast configs.
-slowfast_channel_reduction_ratio = (4, 4, 4,),  # If slow has 64 channels, fast has 16 channels, then 64/16=4
-slowfast_conv_channel_fusion_ratio = 0,  # 2*2: 2 fast 
-model_depth=50,
-model_num_class=self.cfg.CHALEARN.NUM_CLASS,
-input_channels=(3, 2, 3, 1),
-fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder().create_module,
+        fuse_list = []
+        for i, x_f in enumerate(x_fs):
+            fuse = self.conv_fast_to_slow[i](x_f)
+            if self.norm[i] is not None:
+                fuse = self.norm[i](fuse)
+            if self.activation[i] is not None:
+                fuse = self.activation[i](fuse)
+            fuse_list.append(fuse)
+        fuse_cat = torch.cat(fuse_list, dim=1)  # NCTHW, fast features to be fused with slow
 
-# slowfast_fusion_conv_stride=(1,1,1),
-# slowfast_fusion_conv_kernel_size=(7, 1, 1),
+        x_s_fuse = torch.cat([x_s, fuse_cat], dim=1)
 
-# Stem configs.
-stem_function = (
-    create_res_basic_stem,
-    create_res_basic_stem,
-    create_res_basic_stem,
-    create_res_basic_stem,
-),
-stem_dim_outs=(64, 16, 16, 16),  # (slow, fast, fast)
-stem_conv_kernel_sizes = ((1, 7, 7), (1, 7, 7), (1, 7, 7), (1, 7, 7)),
-stem_conv_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2), (1, 2, 2)),
-stem_pool = (nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d, nn.MaxPool3d),
-stem_pool_kernel_sizes = ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-stem_pool_strides = ((1, 2, 2), (1, 2, 2), (1, 2, 2), (1, 2, 2)),
+        x_s_residual = self.residual(x_s)
 
-# Stage configs.
-stage_conv_a_kernel_sizes = (
-    ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-    ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-    ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-    ((1, 1, 1), (1, 1, 1), (3, 1, 1), (3, 1, 1)),
-),
-stage_conv_b_kernel_sizes = (
-    ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-    ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-    ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-    ((1, 3, 3), (1, 3, 3), (1, 3, 3), (1, 3, 3)),
-),
-stage_conv_b_num_groups = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
-stage_conv_b_dilations = (
-    ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-    ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-    ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-    ((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)),
-),
-stage_spatial_strides = ((1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2), (1, 2, 2, 2)),
-stage_temporal_strides = ((1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1), (1, 1, 1, 1)),
-bottleneck = (
-    (
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-    ),
-    (
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-    ),
-    (
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-    ),
-    (
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-        create_bottleneck_block,
-    ),
-),
-# Head configs.
-head_pool_kernel_sizes = ((8, 1, 1), (8, 1, 1), (8, 1, 1), (8, 1, 1)),
-)
-"""
+        x_s_fuse = x_s_fuse + x_s_residual
+
+        return [x_s_fuse, *x_fs]  # , x_f2
+
+    # def forward(self, x):
+    #     x_s = x[0]
+    #     if len(x[1:]) == 1:
+    #         x_f = x[1]
+    #     else:
+    #         x_f = torch.sum(torch.stack(x[1:]), dim=0)
+    #     fuse = self.conv_fast_to_slow(x_f)
+    #     if self.norm is not None:
+    #         fuse = self.norm(fuse)
+    #     if self.activation is not None:
+    #         fuse = self.activation(fuse)
+    #     x_s_fuse = torch.cat([x_s, fuse], 1)
+    #     return [x_s_fuse, *x[1:]]
