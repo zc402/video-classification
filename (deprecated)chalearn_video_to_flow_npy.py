@@ -39,11 +39,14 @@ def flow(im1, im2):
     flow = np.concatenate((u[..., None], v[..., None]), axis=2)
     return flow
 
-def video2flow(video_relative_path, video_root, flow_root):
+def video2flow(video_relative_path, video_root, flow_npy_root):
     # relative path: train/xxx/xxxxx.avi
     video_path = Path(video_root, video_relative_path)  
-    flow_npy_path = Path(flow_root, video_relative_path)
+    flow_npy_path = Path(flow_npy_root, video_relative_path)
     flow_npy_path = Path(str(flow_npy_path).replace('.avi', ''))
+    if flow_npy_path.exists():
+        return
+    flow_npy_path.parent.mkdir(exist_ok=True, parents=True)
 
     cap = cv2.VideoCapture(str(video_path))
     flow_list = []
@@ -81,7 +84,7 @@ def v2f_wrapper(params):
 
 param_list = []
 avi_list = glob.glob(str(Path(sample_root, '**', 'M_*.avi')), recursive=True)
-for video in tqdm(avi_list):
+for video in avi_list:
     video = Path(video)
     name = video.name
     xxx = video.parent.name

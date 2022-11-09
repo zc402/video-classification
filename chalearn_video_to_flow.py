@@ -47,28 +47,33 @@ def video2flow(video_relative_path, video_root, flow_root):
     flow_folder.mkdir(parents=True, exist_ok=True)
 
     cap = cv2.VideoCapture(str(video_path))
-    resize_w, resize_h = (80, 60)
-    flow_list = [np.zeros((resize_h, resize_w, 2))]
+    # resize_w, resize_h = (80, 60)
+    flow_list = []
     im1 = None
     im2 = None
+    num_frame_cnt = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        frame = cv2.resize(frame, (resize_w, resize_h))
+        num_frame_cnt = num_frame_cnt + 1
+        assert im2 is None
+        # frame = cv2.resize(frame, (resize_w, resize_h))
         if im1 is None:
-            im1 = frame  # Frist frame
-            y = np.zeros((im1.shape[0], im1.shape[1], 2))
+            im1 = frame
+            im2 = frame
         else:
             im2 = frame
-            y = flow(im1, im2)
 
-            # Make space for the next frame
-            im1 = im2
-            im2 = None
+        y = flow(im1, im2)
+
+        # Make space for the next frame
+        im1 = im2
+        im2 = None
 
         flow_list.append(y)
     
+    assert num_frame_cnt == len(flow_list)
     UV_max = 0
     
     for frame_num, f in enumerate(flow_list):
@@ -101,18 +106,19 @@ sample_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.SAMPLE)  # Videos with class 
 flow_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.FLOW)
 
 def v2f_wrapper(params):
-    video_relative_path, sample_root, flow_root = params
+    video_relative_path, sample_root, flow_root, i = params
+    print(f'Task {i} / {len(param_list)}')
     video2flow(video_relative_path, sample_root, flow_root)
 
 param_list = []
 avi_list = glob.glob(str(Path(sample_root, '**', 'M_*.avi')), recursive=True)
-for video in tqdm(avi_list):
+for i, video in enumerate(avi_list):
     video = Path(video)
     name = video.name
     xxx = video.parent.name
     name_of_set = video.parent.parent.name
     video_relative_path = Path(name_of_set, xxx, name)
-    param_list.append((video_relative_path, sample_root, flow_root))
+    param_list.append((video_relative_path, sample_root, flow_root, i))
 
 if cfg.DEBUG:
     for p in tqdm(param_list):

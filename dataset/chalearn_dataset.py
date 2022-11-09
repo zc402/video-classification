@@ -27,11 +27,11 @@ class ChalearnVideoDataset(Dataset):
 
     crop_resize = crop_resize_dict  # {"CropFolderName": size}
 
-    def __init__(self, cfg, name_of_set:str) -> None:
+    def __init__(self, cfg, name_of_set:str, sampling:str=None) -> None:
         """name_of_set: train test val"""
         self.name_of_set = name_of_set
         self.cfg = cfg
-        self.num_data_modality_channels = 9
+        self.num_data_modality_channels = 21
 
         # Load label list
         self.labels = get_labels(name_of_set)
@@ -49,9 +49,17 @@ class ChalearnVideoDataset(Dataset):
             transforms.ColorJitter(brightness=0.5, hue=0.1, contrast=0.3, saturation=0.2)
         ])
 
+        if sampling is None:
+            if self.name_of_set == "train":
+                self.sampling = "random"
+            elif self.name_of_set == "valid" or self.name_of_set == "test":
+                self.sampling = "uniform"
+        else:
+            self.sampling = sampling
+
     def _pad_resize_img(self, img, new_size:int):  # Pad to square and resize
-        if len(img.shape) == 2:
-            img = img[:, :, np.newaxis]
+        assert len(img.shape) == 3  # (H,W,C)
+
         h, w, c = img.shape
         m = max(h, w)
         nx = (m-w) // 2  # The x coord in new image
@@ -59,8 +67,7 @@ class ChalearnVideoDataset(Dataset):
         new_img = np.zeros(shape=(m, m, c), dtype=img.dtype)
         new_img[ny:ny+h, nx:nx+w, :] = img  # A square image with original content at center
         resize_img = cv2.resize(new_img, (new_size, new_size), interpolation=cv2.INTER_CUBIC)
-        if len(resize_img.shape) == 2:
-            resize_img = resize_img[:, :, np.newaxis]
+
         return resize_img
 
     def _augment(self, feature_dict) -> None:
@@ -94,15 +101,21 @@ class ChalearnVideoDataset(Dataset):
             frame_path = Path(self.cfg.CHALEARN.ROOT, crop_folder_name, nsetx3x5img)
             if frame_path.exists():
                 img = cv2.imread(str(frame_path))
-                img_U = cv2.imread(str(Path(frame_path.parent, 'U_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
-                img_V = cv2.imread(str(Path(frame_path.parent, 'V_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
-                img_F = cv2.imread(str(Path(frame_path.parent, 'F_'+frame_path.name)))
-                img_D = cv2.imread(str(Path(frame_path.parent, 'D_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)
-                img, img_U, img_V, img_F, img_D = [self._pad_resize_img(x, size) for x in (img, img_U, img_V, img_F, img_D)]  # HWC
-                img_mul = np.concatenate([img, img_U, img_V, img_F, img_D], axis=-1)
+                img_U = cv2.imread(str(Path(frame_path.parent, 'U_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)[..., np.newaxis]
+                img_V = cv2.imread(str(Path(frame_path.parent, 'V_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)[..., np.newaxis]
+                img_F0 = cv2.imread(str(Path(frame_path.parent, 'F0_'+frame_path.name)))
+                img_F1 = cv2.imread(str(Path(frame_path.parent, 'F1_'+frame_path.name)))
+                img_F2 = cv2.imread(str(Path(frame_path.parent, 'F2_'+frame_path.name)))
+                img_F3 = cv2.imread(str(Path(frame_path.parent, 'F3_'+frame_path.name)))
+                img_F4 = cv2.imread(str(Path(frame_path.parent, 'F4_'+frame_path.name)))
+                img_D = cv2.imread(str(Path(frame_path.parent, 'D_'+frame_path.name)), cv2.IMREAD_GRAYSCALE)[..., np.newaxis]
+                # img, img_U, img_V, img_F, img_D = [self._pad_resize_img(x, size) for x in (img, img_U, img_V, img_F0, img_D)]  # HWC
+                img_cat = np.concatenate([img, img_U, img_V, img_F0, img_F1, img_F2, img_F3, img_F4, img_D], axis=-1)
+                img_cat = self._pad_resize_img(img_cat, size)
             else:
-                img_mul = np.zeros((size, size, self.num_data_modality_channels), dtype=np.uint8) + 127
-            input_tensor = self.preprocess(img_mul)
+                img_cat = np.zeros((size, size, self.num_data_modality_channels), dtype=np.uint8) + 127
+            
+            input_tensor = self.preprocess(img_cat)
             res_dict[crop_folder_name] = input_tensor
 
         return res_dict
@@ -158,15 +171,16 @@ class ChalearnVideoDataset(Dataset):
         # Random / Uniform sampling
         # Random sampling
         seq_len = len(img_names)
-        if self.name_of_set == "train" or self.name_of_set == "valid":
+        if self.sampling == "random":
             # Random sampling, take 1
             clip_indices = self.random_sampling(seq_len, self.clip_len)
             collected_features = self.collect_features_from_indices(clip_indices, img_names, nsetx3x5, l)
-        else:
+        elif self.sampling == "uniform":
             # Uniform sampling, take multiple
             clip_indices_list = self.uniform_sampling(seq_len, self.clip_len)
             collected_features = [self.collect_features_from_indices(x, img_names, nsetx3x5, l) for x in clip_indices_list]
-            # collected_features = default_collate(collected_features)
+        else:
+            raise NotImplementedError()
         
         return collected_features
 

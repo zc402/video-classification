@@ -41,32 +41,28 @@ def load_flow(body_img_path):
         if flow_path.exists():
             flow = cv2.imread(str(flow_path))
         else:
-            # TODO: fix 00000.jpg (rerun video to flow) and raise exception here
-            # flow = np.zeros((60, 80, 3), dtype=np.uint8) + np.array((127, 127, 0), np.int8)[np.newaxis, np.newaxis, :]
-            flow = np.zeros((60, 80, 3), np.uint8) + 127
-            # raise Exception(f'An image has RGB but no flow. img: {body_img_path}, expected flow: {flow_path}')
+            raise Exception(f'An image has RGB but no flow. img: {body_img_path}, expected flow: {flow_path}')
         flow_compact.append(flow)
     flow_compact = np.stack(flow_compact)  # NHWC
-    flow_compact = np.mean(flow_compact, axis=0)
+    # flow_compact = np.mean(flow_compact, axis=0)
     # TODO: find max of abs to replace mean operator
-    # flow_uv = flow_compact[:, :, :, 0:2]  # UV. 0~255, 127 as center
-    # flow_mag = flow_compact[:, :, :, 2:3]  # manitude. 0~255
-    # flow_uv_0 = flow_uv.astype(np.float) - 127  # -127 ~ 128, 0 as center
-    # abs_uv = np.abs(flow_uv_0)
-    # uv_argmax = np.argmax(abs_uv, axis=0)
-    # max_flow_uv = flow_uv[uv_argmax, :, :, :]
 
+    # flow_uv = flow_compact[:, :, :, 0:2]  # UV. 0~255, 127 as center
+    # flow_mag = flow_compact[:, :, :, 2]  # manitude. 0~255
+    # nf, hf, wf, cf = flow_compact.shape
+    # mag_argmax = np.argmax(flow_mag, axis=0)  # (H,W)
+    # flat_flow = flow_compact.reshape(-1, cf)
+    # flat_mag_argmax = mag_argmax.flatten()
+    # selected_flow = np.compress(flat_mag_argmax, flat_flow, axis=0)
+    # selected_flow = selected_flow.reshape(hf, wf, cf)
 
     return flow_compact
 
 def crop_body(img_path:Path, target_path:Path, bbox):
-    flow = load_flow(img_path)  # (60, 80, 3)
+    
     # if Path(target_path).exists():
     #     return  # Do not overwrite
-    # if bbox is None:
-    #     black = np.zeros((10, 10, 3), dtype=np.uint8)
-    #     cv2.imwrite(str(target_path), black)
-    #     return
+
     x1, y1, x2, y2 = bbox
     assert img_path.exists()
     img = cv2.imread(str(img_path))  # H W C
@@ -74,15 +70,17 @@ def crop_body(img_path:Path, target_path:Path, bbox):
     cv2.imwrite(str(target_path), cropped)
 
     # Flow modality
-    flow_resize = cv2.resize(flow, (320, 240))  # resize to image size
-    h, w, c = flow_resize.shape
-    flow_pad = np.zeros(shape=(h*2, w*2, c), dtype=img.dtype) + 127  # pad flow
-    flow_pad[h//2: h//2 + h, w//2: w//2 + w, :] = flow_resize
+    # flow_resize = cv2.resize(flow, (320, 240))  # resize to image size
+    flow = load_flow(img_path)
+    for i in range(flow.shape[0]):
+        h, w, c = flow[i].shape
+        flow_pad = np.zeros(shape=(h*2, w*2, c), dtype=img.dtype)  # pad flow
+        flow_pad[h//2: h//2 + h, w//2: w//2 + w, :] = flow[i]
 
-    crop_flow = flow_pad[y1:y2, x1:x2]
-    flow_target_name = 'F_' + target_path.name
-    flow_target_path = Path(target_path.parent, flow_target_name)
-    cv2.imwrite(str(flow_target_path), crop_flow)
+        crop_flow = flow_pad[y1:y2, x1:x2]
+        flow_target_name = f'F{i}_' + target_path.name
+        flow_target_path = Path(target_path.parent, flow_target_name)
+        cv2.imwrite(str(flow_target_path), crop_flow)
 
     # Depth modality
     depth_folder = img_path.parent.name.replace('M_', 'K_')
@@ -165,11 +163,13 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
         cv2.imwrite(str(V_path), V_crop)
 
         # ----------Flow
-        flow_img_path = Path(body_img_path.parent, 'F_' + body_img_path.name)
-        flow = cv2.imread(str(flow_img_path))
-        flow_cropped = flow[y:y+h, x:x+w, :]
-        flow_target_path = target_path.parent / ('F_' + target_path.name)
-        cv2.imwrite(str(flow_target_path), flow_cropped)
+        for i in range(cfg.CHALEARN.IMG_SAMPLE_INTERVAL):
+
+            flow_img_path = Path(body_img_path.parent, f'F{i}_' + body_img_path.name)
+            flow = cv2.imread(str(flow_img_path))
+            flow_cropped = flow[y:y+h, x:x+w, :]
+            flow_target_path = target_path.parent / (f'F{i}_' + target_path.name)
+            cv2.imwrite(str(flow_target_path), flow_cropped)
 
         # ----------Depth
         depth_img_path = Path(body_img_path.parent, 'D_' + body_img_path.name)

@@ -185,7 +185,7 @@ class MyFastToSlowFusionBuilder:
         slow_out_channels = slow_in_channels
         fast_in_channels = fusion_dim_in // self.slowfast_channel_reduction_ratio
         fast_out_channels = int(fast_in_channels * self.conv_fusion_channel_ratio)
-        num_fast_ways = 2
+        num_fast_ways = 1
         fuse_out_channels = slow_out_channels + (fast_out_channels * num_fast_ways)
 
         # conv_dim_in = fusion_dim_in // self.slowfast_channel_reduction_ratio
@@ -201,13 +201,16 @@ class MyFastToSlowFusionBuilder:
             bias=False,
         ) for _ in range(num_fast_ways)])
 
-        residual = nn.Conv3d(
-            slow_in_channels, 
-            fuse_out_channels,
-            kernel_size=(1, 1, 1),
-            stride=(1, 1, 1),
-            padding=(0, 0, 0),
-            bias=False)
+        residual = nn.Sequential(
+            nn.Conv3d(
+                slow_in_channels, 
+                fuse_out_channels,
+                kernel_size=(1, 1, 1),
+                stride=(1, 1, 1),
+                padding=(0, 0, 0),
+                bias=True),
+            nn.ReLU(inplace=True),
+        )
 
         norm_module = nn.ModuleList([
             None
@@ -222,11 +225,22 @@ class MyFastToSlowFusionBuilder:
             None if self.activation is None else self.activation()
             for _ in range(num_fast_ways)])
 
+        res_unit = nn.Sequential(
+            nn.Conv3d(fuse_out_channels, fuse_out_channels, (3, 1, 1), padding=(1, 0, 0)),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm3d(fuse_out_channels),
+            nn.Conv3d(fuse_out_channels, fuse_out_channels, (1, 3, 3), padding=(0, 1, 1)),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm3d(fuse_out_channels),
+            nn.Conv3d(fuse_out_channels, fuse_out_channels, (3, 1, 1), padding=(1, 0, 0)),
+        )
+
         return FuseFastToSlow(
             conv_fast_to_slow=conv_fast_to_slow,
             residual=residual,
             norm=norm_module,
             activation=activation_module,
+            res_unit = res_unit
         )
     
     @classmethod
@@ -256,6 +270,7 @@ class FuseFastToSlow(nn.Module):
         residual: nn.Module,
         norm: Optional[nn.ModuleList] = None,
         activation: Optional[nn.ModuleList] = None,
+        res_unit: nn.Module = None,
     ) -> None:
         """
         Args:
@@ -265,6 +280,8 @@ class FuseFastToSlow(nn.Module):
         """
         super().__init__()
         set_attributes(self, locals())
+        self.relu = nn.ReLU(inplace=True)
+        
 
     def forward(self, x):
         # return x  # No fusion
@@ -282,12 +299,15 @@ class FuseFastToSlow(nn.Module):
         fuse_cat = torch.cat(fuse_list, dim=1)  # NCTHW, fast features to be fused with slow
 
         x_s_fuse = torch.cat([x_s, fuse_cat], dim=1)
+        
+        x_s_fuse = self.res_unit(x_s_fuse)
 
         x_s_residual = self.residual(x_s)
 
         x_s_fuse = x_s_fuse + x_s_residual
+        x_s_fuse = self.relu(x_s_fuse)
 
-        return [x_s_fuse, *x_fs]  # , x_f2
+        return [x_s_fuse, *x_fs]
 
     # def forward(self, x):
     #     x_s = x[0]

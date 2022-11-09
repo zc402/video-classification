@@ -1,6 +1,7 @@
 import enum
 from pathlib import Path
 from random import random
+from typing import Callable
 import torch
 import torch.utils.data 
 from tqdm import tqdm
@@ -93,24 +94,24 @@ class ModelManager():
     def delete_mismatch(self, state_dict):
         layers = [
             'blocks.0.multipathway_blocks.0.conv.weight',
+            'blocks.0.multipathway_blocks.1.conv.weight',
             'blocks.6.proj.weight',
             'blocks.6.proj.bias',
-            'blocks.0.multipathway_blocks.1.conv.weight',
-            'blocks.1.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            'blocks.1.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
-            'blocks.2.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            'blocks.2.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
-            'blocks.3.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            'blocks.3.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
-            'blocks.4.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            'blocks.4.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            # 'blocks.1.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            # 'blocks.1.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            # 'blocks.2.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            # 'blocks.2.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            # 'blocks.3.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            # 'blocks.3.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            # 'blocks.4.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            # 'blocks.4.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
         ]
         for key in layers:
             del state_dict[key]
         return state_dict
 
     def _init_slowfast_model(self):
-        model = init_my_slowfast(self.cfg, (3, 2, 3,), (64, 8, 8,))
+        model = init_my_slowfast(self.cfg, (5, 15,), (64, 8,))
         
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
@@ -124,28 +125,31 @@ class ModelManager():
     def _prepare_slowfast_data(self, batch):
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
-        x_bgr = x[:, 0:3]   # plt.imshow(x_bgr.cpu()[0,:,0].permute((1,2,0)))
-        x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
-        # x_bgruv = x[:, 0:5]
-        x_flow = x[:, 5:8]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
+        # x_bgr = x[:, 0:3]   # plt.imshow(x_bgr.cpu()[0,:,0].permute((1,2,0)))
+        # x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
+        x_bgruv = x[:, 0:5]
+        x_flow = x[:, 5:20]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
         # x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
         # 分别合并RGB和其它模态
         # bgr_uv = torch.cat([x_bgr, x_uv], dim=1)
         # bgr_flow = torch.cat([x_bgr, x_flow], dim=1)
         # bgr_depth = torch.cat([x_bgr, x_depth], dim=1)
         y_true = batch['label'].cuda()
-        return [x_bgr, x_uv, x_flow], y_true  # x_uv, x_flow,  
+        return [x_bgruv, x_flow], y_true  # x_uv, x_flow,  
 
 class Trainer():
 
     def __init__(self, cfg):
         self.debug = cfg.DEBUG
-        if not self.debug:
-            self.num_workers = min(cfg.NUM_CPU, 10)
-            self.save_debug_img = False
-        else:  # Debug
+
+        if self.debug == True:
             self.num_workers = 0
             self.save_debug_img = True
+            
+        elif self.debug == False:
+            self.num_workers = min(cfg.NUM_CPU, 10)
+            self.save_debug_img = False
+        
         self.cfg = cfg
         self.batch_size = cfg.CHALEARN.BATCH_SIZE
             
@@ -156,7 +160,7 @@ class Trainer():
         # self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
 
         self.test_dataset = ChalearnVideoDataset(cfg, 'test')
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=10, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
 
         self.mm = ModelManager(cfg)
         self.model = self.mm.init_model()
@@ -198,7 +202,7 @@ class Trainer():
         print(f'loading checkpoint from {str(ckpt)}')
         
         state_dict = torch.load(ckpt)
-        # del state_dict['blocks.0.multipathway_blocks.0.conv.weight']
+        # del state_dict['blocks.0.multipathway_blocks.2.conv.weight']
         self.model.load_state_dict(state_dict, strict=False)
 
         pass
@@ -261,7 +265,12 @@ class Trainer():
             #     self.save_ckpt(epoch, acc)
             
             if (epoch) % 1 == 0:
-                acc = self.test()
+                y = self.run_eval(
+                    self.test_loader, 
+                    self.mm.prepare_data, 
+                    self.model)
+
+                acc = y['acc']
                 if acc > self.max_historical_acc:
                     self.max_historical_acc = acc
                     self.save_ckpt(epoch, acc)
@@ -288,28 +297,93 @@ class Trainer():
     #     print(f'Eval Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
     #     return accuracy.item()
     
-    def test(self):
-        print("========== Testing ...")
-        pred_list = []
-        true_list = []
+    # def test(self):
+    #     print("========== Testing ...")
+    #     pred_list = []
+    #     true_list = []
+    #     batch_collect = []  # Collect a batch
+    #     video_frames = []  # [7, 5, 10, ...]
+
+    #     def test_batch(collect):
+            
+    #         x, y_true = self.mm.prepare_data(collect)
+
+    #         with torch.no_grad():
+    #             self.model.eval()
+    #             y_pred = self.model(x)  # N,class_score
+            
+    #         y_pred = torch.argmax(y_pred, dim=-1)
+    #         pred_list.extend(y_pred.cpu().numpy().tolist())
+    #         true_list.extend(y_true.cpu().numpy().tolist())
+        
+    #     for step, batch in enumerate(tqdm(self.test_loader)):  # LNTCHW, N=1, L for list generated from dataset
+    #         # batch: [[TCHW]]
+    #         [video_frames.append(len(b)) for b in batch]  # b: N,TCHW, N is length of a video - clip_len
+    #         [batch_collect.extend(b) for b in batch]  # batch_collect: N,TCHW
+    #         if len(batch_collect) < self.batch_size:
+    #             continue
+            
+    #         while len(batch_collect) > self.batch_size:
+    #             # Batch size reached. Run a batch from batch_collect
+    #             batch_full = default_collate(batch_collect[:self.batch_size])
+    #             batch_collect = batch_collect[self.batch_size:]
+                
+    #             test_batch(batch_full)
+            
+    #         if self.debug and step > 5:
+    #             break
+        
+    #     # Last batch
+    #     if len(batch_collect) > 0:
+    #         batch_collect = default_collate(batch_collect)
+    #         test_batch(batch_collect)
+    #     # Acc 
+        
+    #     correct_list = []
+    #     for frames in video_frames:
+    #         preds = np.array([pred_list.pop(0) for _ in range(frames)])
+    #         trues = np.array([true_list.pop(0) for _ in range(frames)])
+    #         assert np.all(trues == trues[0])
+    #         most_pred = np.bincount(preds).argmax()
+    #         true = trues[0]
+    #         correct_list.append(most_pred == true)
+            
+    #     c = np.array(correct_list)
+    #     accuracy = c.sum() / len(c)
+    #     print(f'Test Accuracy: {round(accuracy, 3)}. ({c.sum()} / {len(c)})')
+    #     return accuracy
+
+    # Run dataloader with eval model
+    def run_eval(
+        self, 
+        dataset_loader: torch.utils.data.DataLoader,
+        prepare_data: Callable,
+        model: torch.nn.Module):
+
+        pred_score_list = []  # List of (N, class_score)
+        true_list = []  # List of (N,)
+
         batch_collect = []  # Collect a batch
-        video_frames = []  # [7, 5, 10, ...]
+        samples_per_video = []  # [7, 5, 10, ...]
 
         def test_batch(collect):
             
-            x, y_true = self.mm.prepare_data(collect)
+            x, y_true = prepare_data(collect)
 
             with torch.no_grad():
-                self.model.eval()
-                y_pred = self.model(x)  # N,class_score
+                model.eval()
+                y_pred = model(x)  # N,class_score
             
-            y_pred = torch.argmax(y_pred, dim=-1)
-            pred_list.extend(y_pred.cpu().numpy().tolist())
-            true_list.extend(y_true.cpu().numpy().tolist())
+            y_pred = y_pred.cpu().numpy()
+            y_true = y_true.cpu().numpy()
+
+            pred_score_list.append(y_pred)
+            true_list.append(y_true)
         
-        for step, batch in enumerate(tqdm(self.test_loader)):  # LNTCHW, N=1, L for list generated from dataset
+        for step, batch in enumerate(tqdm(dataset_loader)):  # LNTCHW, N=1, L for list generated from dataset
             # batch: [[TCHW]]
-            [video_frames.append(len(b)) for b in batch]  # b: N,TCHW, N is length of a video - clip_len
+            # How many samples are uniformly generated from the same video. These are aggregated later through majority voting
+            [samples_per_video.append(len(b)) for b in batch]  # b: N,TCHW, N is length of a video - clip_len
             [batch_collect.extend(b) for b in batch]  # batch_collect: N,TCHW
             if len(batch_collect) < self.batch_size:
                 continue
@@ -321,28 +395,46 @@ class Trainer():
                 
                 test_batch(batch_full)
             
-            if self.debug and step > 5:
+            if self.debug == True and step > 5:
                 break
         
         # Last batch
         if len(batch_collect) > 0:
             batch_collect = default_collate(batch_collect)
             test_batch(batch_collect)
+
+        pred_score_arr = np.concatenate(pred_score_list, axis=0)  # (N, class_score)
+        pred_score_arr = np.exp(pred_score_arr) / np.sum(np.exp(pred_score_arr), axis=1, keepdims=True)  # (N, class_score)
+        pred_arr = np.argmax(pred_score_arr, axis=1)  # (N,)
+        true_arr = np.concatenate(true_list, axis=0)  # (N,)
+
         # Acc 
-        
+
         correct_list = []
-        for frames in video_frames:
-            preds = np.array([pred_list.pop(0) for _ in range(frames)])
-            trues = np.array([true_list.pop(0) for _ in range(frames)])
+        read_index = 0
+        for num_samples in samples_per_video:
+            v_begin = read_index
+            v_end = read_index + num_samples
+            read_index = read_index + num_samples
+            preds = pred_arr[v_begin: v_end]
+            trues = true_arr[v_begin: v_end]
             assert np.all(trues == trues[0])
+
             most_pred = np.bincount(preds).argmax()
             true = trues[0]
-            correct_list.append(most_pred == true)
+            is_correct = (most_pred == true)
+
+            correct_list.append(is_correct)
             
         c = np.array(correct_list)
         accuracy = c.sum() / len(c)
-        print(f'Test Accuracy: {round(accuracy, 3)}. ({c.sum()} / {len(c)})')
-        return accuracy
+        return {
+            'p': pred_arr,
+            'ps':pred_score_arr,
+            't': true_arr,
+            'acc': accuracy,
+            'sv': samples_per_video,
+        }
     
     def debug_show(self, input):
         debug_folder = Path('logs', 'debug')
@@ -359,14 +451,14 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_cfg()
-    # yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
-    # for yaml_name in yaml_list:
-    #     train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
-    #     override = Path('..', 'cfg_override.yaml')
-    #     if(override.is_file()):  # override after loading local yaml
-    #         train_cfg.merge_from_file(override)
-    #     trainer = Trainer(train_cfg)
-    #     trainer.train()
-    train_cfg.merge_from_file(Path('config', 'slowfast-HTAH.yaml'))
+    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
+    for yaml_name in yaml_list:
+        train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
+        override = Path('..', 'cfg_override.yaml')
+        if(override.is_file()):  # override after loading local yaml
+            train_cfg.merge_from_file(override)
+        trainer = Trainer(train_cfg)
+        trainer.train()
+    # train_cfg.merge_from_file(Path('config', 'slowfast-HTAH.yaml'))
     
     Trainer(train_cfg).train()
