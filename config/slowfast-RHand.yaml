@@ -1,6 +1,5 @@
 CHALEARN:
   BATCH_SIZE: 100
-  CLIP_LEN: 8
 
 MODEL:
   NAME: 'slowfast-RHand' 

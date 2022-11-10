@@ -1,6 +1,5 @@
 CHALEARN:
   BATCH_SIZE: 30
-  CLIP_LEN: 8
 
 MODEL:
   NAME: 'res3d' 

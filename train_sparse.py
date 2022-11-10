@@ -75,10 +75,7 @@ class ResultSaver:
 
                 trainer = Trainer(cfg)
 
-                y = trainer.run_eval(
-                    loader, 
-                    trainer.mm.prepare_data, 
-                    trainer.model)
+                y = trainer.run_eval(loader)
 
                 del y['p']
 

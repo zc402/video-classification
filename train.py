@@ -111,7 +111,7 @@ class ModelManager():
         return state_dict
 
     def _init_slowfast_model(self):
-        model = init_my_slowfast(self.cfg, (5, 15,), (64, 8,))
+        model = init_my_slowfast(self.cfg, (5, 3,), (64, 8,))
         
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
@@ -123,17 +123,22 @@ class ModelManager():
         return model
     
     def _prepare_slowfast_data(self, batch):
+        # bgr 0:3; uv 3:5; flow 5:20
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
+
+        x_flow = x[:, :, 5:20]  # NTCHW
+        #  C: 5->1, T: 4 -> 20
+        N,T,C,H,W = x_flow.size()
+        x_flow = x_flow.reshape(N, T*5, 3, H, W)  # NTCHW
+        x_flow = torch.permute(x_flow, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW  plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
+
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         # x_bgr = x[:, 0:3]   # plt.imshow(x_bgr.cpu()[0,:,0].permute((1,2,0)))
         # x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
         x_bgruv = x[:, 0:5]
-        x_flow = x[:, 5:20]  # plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
+
         # x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
-        # 分别合并RGB和其它模态
-        # bgr_uv = torch.cat([x_bgr, x_uv], dim=1)
-        # bgr_flow = torch.cat([x_bgr, x_flow], dim=1)
-        # bgr_depth = torch.cat([x_bgr, x_depth], dim=1)
+
         y_true = batch['label'].cuda()
         return [x_bgruv, x_flow], y_true  # x_uv, x_flow,  
 
@@ -265,10 +270,7 @@ class Trainer():
             #     self.save_ckpt(epoch, acc)
             
             if (epoch) % 1 == 0:
-                y = self.run_eval(
-                    self.test_loader, 
-                    self.mm.prepare_data, 
-                    self.model)
+                y = self.run_eval()
 
                 acc = y['acc']
                 if acc > self.max_historical_acc:
@@ -280,85 +282,13 @@ class Trainer():
         
         self.save_ckpt(epoch, acc)
 
-    # def valid(self):
-    #     print("Validating ...")
-    #     correct_list = []
-    #     for batch in tqdm(self.valid_loader):
-    #         x, y_true = self.prepare_data(batch)
-    #         with torch.no_grad():
-    #             self.model.eval()
-    #             y_pred = self.model(x)  # N,class_score
-    #             y_pred = torch.argmax(y_pred, dim=-1)
-    #             correct = y_pred == y_true
-    #             correct_list.append(correct)
-            
-    #     c = torch.concat(correct_list, dim=0)  # Tensor of prediction correctness
-    #     accuracy = c.sum() / len(c)
-    #     print(f'Eval Accuracy: {round(accuracy.item(), 2)}. ({c.sum().item()} / {len(c)})')
-    #     return accuracy.item()
-    
-    # def test(self):
-    #     print("========== Testing ...")
-    #     pred_list = []
-    #     true_list = []
-    #     batch_collect = []  # Collect a batch
-    #     video_frames = []  # [7, 5, 10, ...]
-
-    #     def test_batch(collect):
-            
-    #         x, y_true = self.mm.prepare_data(collect)
-
-    #         with torch.no_grad():
-    #             self.model.eval()
-    #             y_pred = self.model(x)  # N,class_score
-            
-    #         y_pred = torch.argmax(y_pred, dim=-1)
-    #         pred_list.extend(y_pred.cpu().numpy().tolist())
-    #         true_list.extend(y_true.cpu().numpy().tolist())
-        
-    #     for step, batch in enumerate(tqdm(self.test_loader)):  # LNTCHW, N=1, L for list generated from dataset
-    #         # batch: [[TCHW]]
-    #         [video_frames.append(len(b)) for b in batch]  # b: N,TCHW, N is length of a video - clip_len
-    #         [batch_collect.extend(b) for b in batch]  # batch_collect: N,TCHW
-    #         if len(batch_collect) < self.batch_size:
-    #             continue
-            
-    #         while len(batch_collect) > self.batch_size:
-    #             # Batch size reached. Run a batch from batch_collect
-    #             batch_full = default_collate(batch_collect[:self.batch_size])
-    #             batch_collect = batch_collect[self.batch_size:]
-                
-    #             test_batch(batch_full)
-            
-    #         if self.debug and step > 5:
-    #             break
-        
-    #     # Last batch
-    #     if len(batch_collect) > 0:
-    #         batch_collect = default_collate(batch_collect)
-    #         test_batch(batch_collect)
-    #     # Acc 
-        
-    #     correct_list = []
-    #     for frames in video_frames:
-    #         preds = np.array([pred_list.pop(0) for _ in range(frames)])
-    #         trues = np.array([true_list.pop(0) for _ in range(frames)])
-    #         assert np.all(trues == trues[0])
-    #         most_pred = np.bincount(preds).argmax()
-    #         true = trues[0]
-    #         correct_list.append(most_pred == true)
-            
-    #     c = np.array(correct_list)
-    #     accuracy = c.sum() / len(c)
-    #     print(f'Test Accuracy: {round(accuracy, 3)}. ({c.sum()} / {len(c)})')
-    #     return accuracy
-
     # Run dataloader with eval model
-    def run_eval(
-        self, 
-        dataset_loader: torch.utils.data.DataLoader,
-        prepare_data: Callable,
-        model: torch.nn.Module):
+    def run_eval(self, dataset_loader: torch.utils.data.DataLoader=None,):
+
+        prepare_data = self.mm.prepare_data
+        model = self.model
+        if dataset_loader is None:
+            dataset_loader = self.test_loader
 
         pred_score_list = []  # List of (N, class_score)
         true_list = []  # List of (N,)
@@ -405,7 +335,7 @@ class Trainer():
 
         pred_score_arr = np.concatenate(pred_score_list, axis=0)  # (N, class_score)
         pred_score_arr = np.exp(pred_score_arr) / np.sum(np.exp(pred_score_arr), axis=1, keepdims=True)  # (N, class_score)
-        pred_arr = np.argmax(pred_score_arr, axis=1)  # (N,)
+        # pred_arr = np.argmax(pred_score_arr, axis=1)  # (N,)
         true_arr = np.concatenate(true_list, axis=0)  # (N,)
 
         # Acc 
@@ -416,20 +346,22 @@ class Trainer():
             v_begin = read_index
             v_end = read_index + num_samples
             read_index = read_index + num_samples
-            preds = pred_arr[v_begin: v_end]
+            preds = pred_score_arr[v_begin: v_end]  # (N, class_score)
+            preds = np.mean(preds, axis=0)  # Mean over N 
             trues = true_arr[v_begin: v_end]
             assert np.all(trues == trues[0])
 
-            most_pred = np.bincount(preds).argmax()
+            # most_pred = np.bincount(preds).argmax()
+            pred_1 = np.argmax(preds, axis=0)
             true = trues[0]
-            is_correct = (most_pred == true)
+            is_correct = (pred_1 == true)
 
             correct_list.append(is_correct)
             
         c = np.array(correct_list)
         accuracy = c.sum() / len(c)
+        print(f'Test Accuracy: {round(accuracy, 3)}. ({c.sum()} / {len(c)})')
         return {
-            'p': pred_arr,
             'ps':pred_score_arr,
             't': true_arr,
             'acc': accuracy,
@@ -458,7 +390,8 @@ if __name__ == '__main__':
         if(override.is_file()):  # override after loading local yaml
             train_cfg.merge_from_file(override)
         trainer = Trainer(train_cfg)
-        trainer.train()
+        # trainer.train()
+        trainer.run_eval()
     # train_cfg.merge_from_file(Path('config', 'slowfast-HTAH.yaml'))
     
-    Trainer(train_cfg).train()
+    # Trainer(train_cfg).train()

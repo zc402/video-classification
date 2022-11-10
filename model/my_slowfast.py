@@ -61,7 +61,7 @@ def init_my_slowfast(cfg, input_channels, stem_dim_outs):
     assert len(stem_dim_outs) == num_c
 
     stem_function = tuple([create_res_basic_stem,] * num_c)
-    stem_conv_kernel_sizes = tuple([(1, 7, 7) for _ in range(num_c)])
+    stem_conv_kernel_sizes = ((1, 7, 7), (5, 7, 7))
     stem_conv_strides = tuple([(1, 2, 2) for _ in range(num_c)])
     stem_pool = tuple([nn.MaxPool3d for _ in range(num_c)])
     stem_pool_kernel_sizes = tuple([(1, 3, 3) for _ in range(num_c)])
@@ -72,7 +72,7 @@ def init_my_slowfast(cfg, input_channels, stem_dim_outs):
     stage_conv_b_dilations = tuple([((1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)) for _ in range(num_c)] )
     stage_spatial_strides = tuple([(1, 2, 2, 2) for _ in range(num_c)])
     stage_temporal_strides = tuple([(1, 1, 1, 1) for _ in range(num_c)])
-    head_pool_kernel_sizes = tuple([(8, 2, 2) for _ in range(num_c)])
+    head_pool_kernel_sizes = ((4, 2, 2), (20, 2, 2))
 
     bottleneck = tuple([
         (
@@ -208,8 +208,7 @@ class MyFastToSlowFusionBuilder:
                 kernel_size=(1, 1, 1),
                 stride=(1, 1, 1),
                 padding=(0, 0, 0),
-                bias=True),
-            nn.ReLU(inplace=True),
+                bias=False),
         )
 
         norm_module = nn.ModuleList([
@@ -225,22 +224,22 @@ class MyFastToSlowFusionBuilder:
             None if self.activation is None else self.activation()
             for _ in range(num_fast_ways)])
 
-        res_unit = nn.Sequential(
-            nn.Conv3d(fuse_out_channels, fuse_out_channels, (3, 1, 1), padding=(1, 0, 0)),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm3d(fuse_out_channels),
-            nn.Conv3d(fuse_out_channels, fuse_out_channels, (1, 3, 3), padding=(0, 1, 1)),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm3d(fuse_out_channels),
-            nn.Conv3d(fuse_out_channels, fuse_out_channels, (3, 1, 1), padding=(1, 0, 0)),
-        )
+        # res_unit = nn.Sequential(
+        #     nn.Conv3d(fuse_out_channels, fuse_out_channels, (1, 1, 1)),
+        #     nn.ReLU(inplace=True),
+        #     nn.BatchNorm3d(fuse_out_channels),
+        #     nn.Conv3d(fuse_out_channels, fuse_out_channels, (1, 3, 3), padding=(0, 1, 1)),
+        #     nn.ReLU(inplace=True),
+        #     nn.BatchNorm3d(fuse_out_channels),
+        #     nn.Conv3d(fuse_out_channels, fuse_out_channels, (1, 1, 1)),
+        # )
 
         return FuseFastToSlow(
             conv_fast_to_slow=conv_fast_to_slow,
             residual=residual,
             norm=norm_module,
             activation=activation_module,
-            res_unit = res_unit
+            # res_unit = res_unit
         )
     
     @classmethod
@@ -249,7 +248,7 @@ class MyFastToSlowFusionBuilder:
             slowfast_channel_reduction_ratio=slowfast_channel_reduction_ratio,
                 conv_fusion_channel_ratio=2,
                 conv_kernel_size=(7, 1, 1),
-                conv_stride=(1,1,1),
+                conv_stride=(5,1,1),
                 norm=nn.BatchNorm3d,
                 activation=nn.ReLU,
                 max_stage_idx=len(_MODEL_STAGE_DEPTH[50]) - 1,
@@ -280,7 +279,6 @@ class FuseFastToSlow(nn.Module):
         """
         super().__init__()
         set_attributes(self, locals())
-        self.relu = nn.ReLU(inplace=True)
         
 
     def forward(self, x):
@@ -300,14 +298,24 @@ class FuseFastToSlow(nn.Module):
 
         x_s_fuse = torch.cat([x_s, fuse_cat], dim=1)
         
-        x_s_fuse = self.res_unit(x_s_fuse)
+        # x_s_fuse = self.res_unit(x_s_fuse)
 
         x_s_residual = self.residual(x_s)
 
         x_s_fuse = x_s_fuse + x_s_residual
-        x_s_fuse = self.relu(x_s_fuse)
 
         return [x_s_fuse, *x_fs]
+
+    # def forward(self, x):
+    #     x_s = x[0]
+    #     x_f = x[1]
+    #     fuse = self.conv_fast_to_slow[0](x_f)
+    #     if self.norm is not None:
+    #         fuse = self.norm[0](fuse)
+    #     if self.activation is not None:
+    #         fuse = self.activation[0](fuse)
+    #     x_s_fuse = torch.cat([x_s, fuse], 1)
+    #     return [x_s_fuse, x_f]
 
     # def forward(self, x):
     #     x_s = x[0]
