@@ -4,4 +4,5 @@ CHALEARN:
 MODEL:
   NAME: 'slowfast-HTAH' 
   R3D_INPUT: 'CropHTAH'
-  LR: 5e-4
+  LR: 1e-3
+  MAX_EPOCH: 100

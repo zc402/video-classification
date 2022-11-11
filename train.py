@@ -111,7 +111,7 @@ class ModelManager():
         return state_dict
 
     def _init_slowfast_model(self):
-        model = init_my_slowfast(self.cfg, (5, 3,), (64, 8,))
+        model = init_my_slowfast(self.cfg, (5, 15,), (64, 8,))
         
         pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
         state_dict = pretrained["model_state"]
@@ -126,16 +126,18 @@ class ModelManager():
         # bgr 0:3; uv 3:5; flow 5:20
         x = batch[self.cfg.MODEL.R3D_INPUT].cuda()  # NTCHW
 
-        x_flow = x[:, :, 5:20]  # NTCHW
+        
         #  C: 5->1, T: 4 -> 20
-        N,T,C,H,W = x_flow.size()
-        x_flow = x_flow.reshape(N, T*5, 3, H, W)  # NTCHW
-        x_flow = torch.permute(x_flow, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW  plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
+        # N,T,C,H,W = x_flow.size()
+        # flow叠到temporal上会大幅降低准确率76 - 58
+        # x_flow = x_flow.reshape(N, T*5, 3, H, W)  # NTCHW
+        # x_flow = torch.permute(x_flow, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW  plt.imshow(x_flow.cpu()[0,:,4].permute((1,2,0))[:,:,:])
 
         x = torch.permute(x, [0, 2, 1, 3, 4])  # NTCHW -> NCTHW
         # x_bgr = x[:, 0:3]   # plt.imshow(x_bgr.cpu()[0,:,0].permute((1,2,0)))
         # x_uv = x[:, 3:5]    # plt.imshow(x_uv.cpu()[0,:,0].permute((1,2,0))[:,:,1:])
         x_bgruv = x[:, 0:5]
+        x_flow = x[:, 5:20]
 
         # x_depth = x[:, 8:9] # plt.imshow(x_depth.cpu()[0,:,0].permute((1,2,0)))
 
@@ -208,7 +210,7 @@ class Trainer():
         
         state_dict = torch.load(ckpt)
         # del state_dict['blocks.0.multipathway_blocks.2.conv.weight']
-        self.model.load_state_dict(state_dict, strict=False)
+        self.model.load_state_dict(state_dict, strict=True)
 
         pass
 
@@ -383,15 +385,15 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_cfg()
-    yaml_list = ['slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
+    yaml_list = ['slowfast-HTAH_1', 'slowfast-HTAH_2', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
     for yaml_name in yaml_list:
         train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
         override = Path('..', 'cfg_override.yaml')
         if(override.is_file()):  # override after loading local yaml
             train_cfg.merge_from_file(override)
         trainer = Trainer(train_cfg)
-        # trainer.train()
-        trainer.run_eval()
+        trainer.train()
+        # trainer.run_eval()
     # train_cfg.merge_from_file(Path('config', 'slowfast-HTAH.yaml'))
     
     # Trainer(train_cfg).train()

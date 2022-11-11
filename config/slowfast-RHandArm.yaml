@@ -5,3 +5,4 @@ MODEL:
   NAME: 'slowfast-RHandArm' 
   R3D_INPUT: 'CropRHandArm'
   LR: 5e-4
+  MAX_EPOCH: 50

@@ -77,8 +77,6 @@ class ResultSaver:
 
                 y = trainer.run_eval(loader)
 
-                del y['p']
-
                 print(f"eval acc {y['acc']}")
 
                 eval_save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,9 +163,12 @@ class SparseTrainer:
         self.optim = optim.Adam(self.sparse_model.parameters(), lr=1e-3)
         self.loss = CrossEntropyLoss()
 
+        self.max_accuracy = 0.
+        self.ckpt_folder = Path(cfg.CHALEARN.ROOT, cfg.MODEL.LOGS, 'sparse_fusion_ckpt')
+
     def train(self):
         
-        for epoch in range(200):
+        for epoch in range(2000):
             # print(f'Running epoch {epoch}')
             for step, batch in enumerate(self.train_loader):
                 self.sparse_model.train()
@@ -180,16 +181,22 @@ class SparseTrainer:
                 self.optim.step()
 
                 if step % 100 == 0:
+                    pass
                     # print(loss_tensor.item())
-                    correctness = (T_n.detach().cpu().numpy() == np.argmax(P_nc.detach().cpu().numpy(), axis=1))
+                    # correctness = (T_n.detach().cpu().numpy() == np.argmax(P_nc.detach().cpu().numpy(), axis=1))
                     # print(np.mean(correctness))
 
-            if (epoch+1) % 10 == 0:
-                self.test()
+            if (epoch+1) % 20 == 0:
+                self.test(epoch)
+            if (epoch+1) % 100 == 0:
+                print("Epoch:%d" % epoch)
         
+    def save_ckpt(self, acc, epoch):
+        self.ckpt_folder.mkdir(parents=True, exist_ok=True)
+        ckpt_path = Path(self.ckpt_folder, 'acc-%.3f-epoch-%d' % (acc, epoch))
+        torch.save(self.sparse_model.state_dict(), ckpt_path)
 
-
-    def test(self):
+    def test(self, epoch=0):
         # correct_samples = []  # whether a sample prediction is correct
 
         pred_score_list = []  # (L, N, C,) pred_score for each sample
@@ -205,7 +212,7 @@ class SparseTrainer:
                 true_list.append(T_n.cpu().numpy())
         
         pred_score_arr = np.concatenate(pred_score_list, axis=0)  # (N,C,)
-        pred_arr = np.argmax(pred_score_arr, axis=1)
+        # pred_arr = np.argmax(pred_score_arr, axis=1)
         true_arr = np.concatenate(true_list, axis=0)  # (N)
 
         # Whether a video prediction is correct
@@ -216,18 +223,26 @@ class SparseTrainer:
             v_begin = read_index
             v_end = read_index + num_samples
             read_index = read_index + num_samples
-            preds = pred_arr[v_begin: v_end]
+            preds = pred_score_arr[v_begin: v_end]  # N,C
+            preds = np.mean(preds, axis=0)  # C
             trues = true_arr[v_begin: v_end]
             assert np.all(trues == trues[0])
 
-            most_pred = np.bincount(preds).argmax()
+            pred_1 = np.argmax(preds, axis=0)
             true = trues[0]
-            is_correct = (most_pred == true)
+            is_correct = (pred_1 == true)
 
             correct_list.append(is_correct)
         
         accuracy = np.mean(correct_list)
-        print(f'Test accuracy: {accuracy}')
+        
+        if accuracy > self.max_accuracy:
+            self.save_ckpt(accuracy, epoch)
+        self.max_accuracy = max(accuracy, self.max_accuracy)
+
+        print(f'Max accuracy: %.3f, new test accuracy: %.3f' % (self.max_accuracy, accuracy))
+
+        
 
 
 
