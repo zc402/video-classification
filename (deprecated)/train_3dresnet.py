@@ -42,7 +42,6 @@ class Trainer():
         self.optim = None
         self.num_step = 0
         # self.ckpt = Path(cfg.MODEL.CKPT)
-        self.num_class = cfg.CHALEARN.SAMPLE_CLASS
         self.save_debug_img = False  # Save batch data for debug
 
     def _lazy_init_model(self, in_channels, num_resnet):

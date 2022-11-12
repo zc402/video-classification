@@ -24,7 +24,7 @@ from pytorchvideo.models.resnet import create_bottleneck_block, create_res_stage
 from pytorchvideo.models.stem import create_res_basic_stem
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
-from model.multiple_resnet import MultipleResnet
+
 from config.crop_cfg import crop_folder_list
 
 from typing import Callable, List, Optional, Tuple, Union
@@ -84,10 +84,10 @@ def init_my_slowfast(cfg, input_channels, stem_dim_outs):
         for _ in range(num_c)])
 
     fuse = cfg.MODEL.FUSE
-    if fuse:
+    if fuse == True:
         fusion_builder = MyFastToSlowFusionBuilder.build_fusion_builder(slowfast_channel_reduction_ratio[0]).create_module
         slowfast_conv_channel_fusion_ratio = 2*(num_c - 1)
-    else:
+    elif fuse == False:
         fusion_builder = nn.Identity
         slowfast_conv_channel_fusion_ratio = 0
 
@@ -281,7 +281,6 @@ class FuseFastToSlow(nn.Module):
         """
         super().__init__()
         set_attributes(self, locals())
-        
 
     def forward_C123(self, x):  # conv123, residual
         # return x  # No fusion

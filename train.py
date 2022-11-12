@@ -30,7 +30,6 @@ from pytorchvideo.models.resnet import create_bottleneck_block, create_res_stage
 from pytorchvideo.models.stem import create_res_basic_stem
 
 from dataset.chalearn_dataset import ChalearnVideoDataset
-from model.multiple_resnet import MultipleResnet
 from config.crop_cfg import crop_folder_list
 
 torch.multiprocessing.set_sharing_strategy('file_system')  # Solve the "received 0 items of ancdata" error
@@ -97,14 +96,15 @@ class ModelManager():
             'blocks.0.multipathway_blocks.1.conv.weight',
             'blocks.6.proj.weight',
             'blocks.6.proj.bias',
-            # 'blocks.1.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            # 'blocks.1.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
-            # 'blocks.2.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            # 'blocks.2.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
-            # 'blocks.3.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            # 'blocks.3.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
-            # 'blocks.4.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
-            # 'blocks.4.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+
+            'blocks.1.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.1.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.2.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.2.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.3.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.3.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.4.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.4.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
         ]
         for key in layers:
             del state_dict[key]
@@ -175,7 +175,6 @@ class Trainer():
         
         self.num_step = 0
         self.ckpt_dir = Path(cfg.CHALEARN.ROOT, cfg.MODEL.LOGS, cfg.MODEL.CKPT_DIR, cfg.MODEL.NAME)
-        self.num_class = cfg.CHALEARN.SAMPLE_CLASS
         self.max_historical_acc = 0.
 
         self.load_ckpt()
@@ -209,7 +208,7 @@ class Trainer():
         print(f'loading checkpoint from {str(ckpt)}')
         
         state_dict = torch.load(ckpt)
-        # del state_dict['blocks.0.multipathway_blocks.2.conv.weight']
+        # self.mm.delete_mismatch(state_dict)
         self.model.load_state_dict(state_dict, strict=True)
 
         pass
@@ -385,7 +384,8 @@ class Trainer():
 
 if __name__ == '__main__':
     train_cfg = get_cfg()
-    yaml_list = ['slowfast-HTAH_1', 'slowfast-HTAH_2', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand']
+    # 'slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm',
+    yaml_list = ['slowfast-RHand']
     for yaml_name in yaml_list:
         train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
         override = Path('..', 'cfg_override.yaml')

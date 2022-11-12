@@ -1,8 +1,8 @@
 CHALEARN:
-  BATCH_SIZE: 30
+  BATCH_SIZE: 40
 
 MODEL:
   NAME: 'slowfast-LHandArm' 
   R3D_INPUT: 'CropLHandArm'
-  LR: 5e-4
+  LR: 2e-4
   MAX_EPOCH: 50

@@ -1,8 +1,0 @@
-CHALEARN:
-  BATCH_SIZE: 40
-
-MODEL:
-  NAME: 'slowfast-HTAH' 
-  R3D_INPUT: 'CropHTAH'
-  LR: 2e-4
-  MAX_EPOCH: 100
