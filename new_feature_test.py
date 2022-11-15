@@ -1,4 +1,5 @@
 import glob
+import sys
 import torch
 import numpy as np
 from pathlib import Path
@@ -7,9 +8,13 @@ import torchvision
 from tqdm import tqdm
 
 from torchvision.models.optical_flow import raft_large, Raft_Large_Weights
+
+import tkinter  # For matplotlib
+import matplotlib
+
 import matplotlib.pyplot as plt
+
 import torchvision.transforms.functional as F
-from av.video.format import VideoFormat
 import av
 
 
@@ -177,38 +182,40 @@ class ConvertVideoToFlow:
         flow = flow.astype(np.uint8)  # TCHW
         return flow
 
-ConvertVideoToFlow().convert()
+# ConvertVideoToFlow().convert()
 
+class ConvertVideoToIUV:
+    def __init__(self) -> None:
+        self.iuv_base = '4_IUV_New'
+        from config.defaults import get_override_cfg
+        cfg = get_override_cfg()
+        self.video_sample_root = Path(cfg.CHALEARN.ROOT, cfg.CHALEARN.SAMPLE)
+        densepose = Path(cfg.DENSEPOSE)
 
-# Save multiple video streams---------
-# @staticmethod
-    # def write_video_TCHW(filename: Path, video_array: np.ndarray):
-    #     assert len(video_array.shape) == 4  #  TCHW
+        sys.path.insert(0, str(densepose))
+        import apply_net
+        self.apply_net = apply_net
+        self.yaml_path = Path(densepose, 'configs', 'densepose_rcnn_R_101_FPN_DL_s1x.yaml').as_posix()
+        self.model_pkl = Path('pretrained', 'model_final_844d15.pkl').absolute().as_posix()
 
-    #     T, C, H, W = video_array.shape
+    def convert(self):
 
-    #     filename.parent.mkdir(parents=True, exist_ok=True)
-    #     with av.open(str(filename), mode="w") as container:
-            
-    #         # Must initialize stream first before container.mux
-    #         streams = []
-    #         videos = []
-    #         for c in range(C):
-    #             video = video_array[:, c]
-    #             stream = container.add_stream("mpeg4", rate=10)
-    #             stream.width = W
-    #             stream.height = H
-    #             stream.pix_fmt = "yuv420p"
-    #             streams.append(stream)
-    #             videos.append(video)
+        avi_list = glob.glob(str(Path(self.video_sample_root, '**', 'M_*.avi')), recursive=True)
+        for avi in tqdm(avi_list):
+            iuv_file = ChaPath(avi).change_base(self.iuv_base)
+            iuv_file = Path(iuv_file.parent, iuv_file.stem + '.pkl')
+            # if iuv_file.exists():
+            #     continue
+            iuv_file.parent.mkdir(parents=True, exist_ok=True)
 
-    #         for stream, video in zip(streams, videos):
-                
-    #             for frame in video:
+            self.apply_net.entrance(
+                self.yaml_path, 
+                self.model_pkl,
+                avi,
+                iuv_file.as_posix())
 
-    #                 frame = av.VideoFrame.from_ndarray(frame, format="gray")
-    #                 for packet in stream.encode(frame):
-    #                     container.mux(packet)
-
-    #             for packet in stream.encode():
-    #                 container.mux(packet)
+# matplotlib.use('TkAgg')
+# plt.imshow(video[10])
+# plt.show()
+if __name__ == '__main__':
+    ConvertVideoToIUV().convert()
