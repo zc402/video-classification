@@ -108,8 +108,8 @@ def crop_body_parts(body_img_path, target_relative_path, iuv):
     def _crop_part(part_indices, save_name):
 
         target_path = Path(cfg.CHALEARN.ROOT, save_name, target_relative_path)
-        # if Path(target_path).exists():
-        #     return  # Do not overwrite
+        if Path(target_path).exists():
+            return  # Do not overwrite
         target_path.parent.mkdir(parents=True, exist_ok=True)
         # mask = (I == part_indices)
         mask = np.zeros_like(I)

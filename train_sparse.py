@@ -55,13 +55,13 @@ class ResultSaver:
 
             sampling = 'uniform'
             self.train_dataset = ChalearnVideoDataset(cfg, 'train', sampling)
-            self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
+            self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE//3, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
 
             # self.valid_dataset = ChalearnVideoDataset(cfg, 'valid', sampling)
             # self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
 
             self.test_dataset = ChalearnVideoDataset(cfg, 'test', sampling)
-            self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
+            self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE//3, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
             
             def save_eval_materials(name_of_set):
                 # Save eval result into file system
@@ -83,7 +83,7 @@ class ResultSaver:
                 with eval_save_path.open('wb') as f:
                     pickle.dump(y, f)
             
-            # save_eval_materials('train')
+            save_eval_materials('train')
             save_eval_materials('test')
 
 class SparseModel(nn.Module):
@@ -150,14 +150,15 @@ class SparseFusionDataset(torch.utils.data.Dataset):
 class SparseTrainer:
 
     def __init__(self) -> None:
+        batch_size = 500
         cfg = get_override_cfg()
         train_material_save_folder = Path(cfg.CHALEARN.ROOT, cfg.MODEL.LOGS, 'sparse_fusion', 'train')
         self.train_dataset = SparseFusionDataset(train_material_save_folder)
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=200, shuffle=True)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
 
         test_material_save_folder = Path(cfg.CHALEARN.ROOT, cfg.MODEL.LOGS, 'sparse_fusion', 'test')
         self.test_dataset = SparseFusionDataset(test_material_save_folder)
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=200)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=batch_size)
 
         self.sparse_model = SparseModel(self.train_dataset.num_class, self.train_dataset.num_part).cuda()
         self.optim = optim.Adam(self.sparse_model.parameters(), lr=1e-3)
@@ -186,9 +187,9 @@ class SparseTrainer:
                     # correctness = (T_n.detach().cpu().numpy() == np.argmax(P_nc.detach().cpu().numpy(), axis=1))
                     # print(np.mean(correctness))
 
-            if (epoch+1) % 20 == 0:
+            if (epoch+1) % 10 == 0:
                 self.test(epoch)
-            if (epoch+1) % 100 == 0:
+            if (epoch+1) % 20 == 0:
                 print("Epoch:%d" % epoch)
         
     def save_ckpt(self, acc, epoch):

@@ -1,0 +1,8 @@
+CHALEARN:
+  BATCH_SIZE: 55
+
+MODEL:
+  NAME: 'slowfast-Torso' 
+  R3D_INPUT: 'CropTorso'
+  LR: 2e-4
+  MAX_EPOCH: 50

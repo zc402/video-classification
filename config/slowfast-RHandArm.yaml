@@ -1,5 +1,5 @@
 CHALEARN:
-  BATCH_SIZE: 40
+  BATCH_SIZE: 80
 
 MODEL:
   NAME: 'slowfast-RHandArm' 

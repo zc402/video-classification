@@ -382,10 +382,30 @@ class Trainer():
             plt.close()
             print('image saved')
 
+def train_unimportant_parts():
+    crop_list = [
+        'CropLHandLowArm', 'CropRHandLowArm',
+        'CropLArm', 'CropRArm',
+        'CropLHandArmTorso', 'CropRHandArmTorso',
+        'CropToUpArm', 'CropToUpLoArm',
+    ]
+
+    for crop_name in crop_list:
+
+        _cfg = get_cfg()
+        _cfg.CHALEARN.BATCH_SIZE = 80
+        _cfg.MODEL.NAME = 'slowfast-' + crop_name
+        _cfg.MODEL.R3D_INPUT = crop_name
+        _cfg.MODEL.LR = 2e-4
+        _cfg.MODEL.MAX_EPOCH = 50
+
+        trainer = Trainer(_cfg)
+        trainer.train()
+
 if __name__ == '__main__':
     train_cfg = get_cfg()
-    # 'slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm',
-    yaml_list = ['slowfast-RHand']
+    # 'slowfast-HTAH', 'slowfast-LHandArm', 'slowfast-LHand', 'slowfast-RHandArm', 'slowfast-RHand'
+    yaml_list = ['slowfast-Torso']
     for yaml_name in yaml_list:
         train_cfg.merge_from_file(Path('config', yaml_name + '.yaml'))
         override = Path('..', 'cfg_override.yaml')

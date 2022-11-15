@@ -2,6 +2,13 @@
 # Index in "I" of IUV
 lhand = [4]
 rhand = [3]
+
+lUArm = [15, 17]
+rUArm = [16, 18]
+
+lLArm = [19, 21]  # Left lower arm
+rLArm = [20, 22]
+
 larm = [21, 19, 17, 15]
 rarm = [20, 22, 16, 18]
 torso = [1, 2]
@@ -13,18 +20,28 @@ md = 128
 lg = 192  # 256
 
 properties = [
+
+    (lhand + larm + torso + head + rarm + rhand, 'CropHTAH', lg),
+
     (lhand, 'CropLHand', sm),
     (rhand, 'CropRHand', sm),
+
+    (lhand + larm, 'CropLHandArm', md),
+    (rhand + rarm, 'CropRHandArm', md),
+
+    (torso, 'CropTorso', md),
+
+    # (lhand + lLArm, 'CropLHandLowArm', md),
+    # (rhand + rLArm, 'CropRHandLowArm', md),
 
     # (larm, 'CropLArm', md),
     # (rarm, 'CropRArm', md),
 
-    (torso + larm, 'CropTorsoLArm', lg),
-    (torso + rarm, 'CropTorsoRArm', lg),
-    # (head, 'CropHead'),
-    (lhand + larm, 'CropLHandArm', md),
-    (rhand + rarm, 'CropRHandArm', md),
-    (lhand + larm + torso + head + rarm + rhand, 'CropHTAH', lg),
+    # (lhand + larm + torso, 'CropLHandArmTorso', lg), # lHAT
+    # (rhand + rarm + torso, 'CropRHandArmTorso', lg),
+
+    # (torso + lUArm + rUArm, 'CropToUpArm', md),
+    # (torso + larm + rarm, 'CropToUpLoArm', md),
 ]
 
 # {folder: size}
