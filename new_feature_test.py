@@ -1,4 +1,5 @@
 import glob
+import pickle
 import sys
 import torch
 import numpy as np
@@ -84,32 +85,27 @@ class VideoIO:
             # save_path = ChaPath(filename).prepend(f'{c}_')
             VideoIO.write_video(cPath, video_array[:, c])
 
-    @staticmethod
-    def read_video_TCHW(filename: Path, channels: int):
-        videos = []
-        for c in range(channels):
-            cPath = Path(filename.parent, f'{c}_{filename.name}')
-            video = VideoIO.read_video_gray(cPath)
-            videos.append(video)  # THW
-        videos = torch.stack(videos, dim=1)  # TCHW
+    # @staticmethod
+    # def read_video_TCHW(filename: Path, channels: int):
+    #     videos = []
+    #     for c in range(channels):
+    #         cPath = Path(filename.parent, f'{c}_{filename.name}')
+    #         frames = VideoIO.read_video_gray(cPath)
+    #         videos.append(frames)  # THW
+    #     videos = torch.stack(videos, dim=1)  # TCHW
 
-        return videos
+    #     return videos
     
     @staticmethod
-    def read_video(filename: Path, format='gray'):
+    def read_video(filename: Path, format):
+        assert format in ['gray', 'rgb24']
         frame_list = []
         with av.open(filename) as container:
             for frame in container.decode(video=0):
                 frame_list.append(frame.to_ndarray(format=format))
 
-        video_array = np.stack(frame_list)
-        return video_array
-    
-    def read_video_rgb(filename: Path):
-        return VideoIO.read_video(filename, format='rgb24')
-    
-    def read_video_gray(filename: Path):
-        return VideoIO.read_video(filename, format='gray')
+        # video_array = np.stack(frame_list)
+        return frame_list
 
 
 class ConvertVideoToFlow:
@@ -140,15 +136,15 @@ class ConvertVideoToFlow:
 
     def _flow_from_file(self, filename:Path):
 
-        video = VideoIO.read_video_rgb(filename)
-        T, H, W, C = video.shape
+        frames = VideoIO.read_video(filename, format='rgb24')
+        T = len(frames)
         
         flow_list = []
         img1_batch = []
         img2_batch = []
         for t in range(T-1):
-            img1_batch.append(video[t])
-            img2_batch.append(video[t+1])
+            img1_batch.append(frames[t])
+            img2_batch.append(frames[t+1])
 
             if len(img1_batch) >= self.batch_size:
                 flow = self._array_to_flow(np.asarray(img1_batch), np.asarray(img2_batch))
@@ -184,7 +180,7 @@ class ConvertVideoToFlow:
 
 # ConvertVideoToFlow().convert()
 
-class ConvertVideoToIUV:
+class ConvertVideoToIUVPkl:
     def __init__(self) -> None:
         self.iuv_base = '4_IUV_New'
         from config.defaults import get_override_cfg
@@ -202,20 +198,92 @@ class ConvertVideoToIUV:
 
         avi_list = glob.glob(str(Path(self.video_sample_root, '**', 'M_*.avi')), recursive=True)
         for avi in tqdm(avi_list):
-            iuv_file = ChaPath(avi).change_base(self.iuv_base)
-            iuv_file = Path(iuv_file.parent, iuv_file.stem + '.pkl')
-            # if iuv_file.exists():
-            #     continue
-            iuv_file.parent.mkdir(parents=True, exist_ok=True)
+            iuv_pkl_path = ChaPath(avi).change_base(self.iuv_base)
+            iuv_pkl_path = Path(iuv_pkl_path.parent, iuv_pkl_path.stem + '.pkl')
+            if iuv_pkl_path.exists():
+                continue
+            iuv_pkl_path.parent.mkdir(parents=True, exist_ok=True)
 
             self.apply_net.entrance(
                 self.yaml_path, 
                 self.model_pkl,
                 avi,
-                iuv_file.as_posix())
+                iuv_pkl_path.as_posix())
+
+from config.defaults import get_override_cfg
+cfg = get_override_cfg()
+densepose = Path(cfg.DENSEPOSE).absolute()
+sys.path.append(str(densepose))
+
+class ConvertIuvPklToUvVideo:
+    """
+    Convert the UV maps in .pkl file into individual videos
+    """
+    def __init__(self) -> None:
+        self.iuv_base = '4_IUV_New'
+        self.uv_vid_base = '5_UV_Video'
+
+        self.y_pad = 120  # y-pad-left
+        self.x_pad = 160  # x-pad-left
+        
+        self.img_h = 240
+        self.img_w = 320
+        
+
+        from config.defaults import get_override_cfg
+        cfg = get_override_cfg()
+        
+        self.iuv_pkl_base = Path(cfg.CHALEARN.ROOT, self.iuv_base)
+    
+    def save_uv(self, iuv_pkl: Path, save_path:Path):
+        with open(iuv_pkl, 'rb') as f:
+            results = pickle.load(f)
+
+        uv_map_list = []  # [T][CHW]
+        for result in results:  # one result is one frame
+            bg_pad = np.zeros((2, self.img_h*2, self.img_w*2), np.uint8)  # CHW
+            box = result['pred_boxes_XYXY']
+            if len(box) == 0:
+                # No detection
+                print('No detection')
+            else:
+                x1, y1, x2, y2 = box[0].cpu().numpy().astype(int)
+                # x1, x2 = x1 - self.x_pad, x2 - self.x_pad
+                # y1, y2 = y1 - self.y_pad, y2 - self.y_pad
+                # x1 = max(x1, 0)
+                # y1 = max(y1, 0)
+                # x2 = min(x2, self.img_w)
+                # y2 = min(y2, self.img_h)
+                
+                densepose = result['pred_densepose'][0].uv  # CHW
+                densepose = densepose.cpu().numpy()
+                densepose = densepose * 255.
+                densepose = densepose.astype(np.uint8)
+                
+                map_h, map_w = densepose.shape[1:]
+                bg_pad[:, y1:y1+map_h, x1:x1+map_w] = densepose
+
+                uv_map = bg_pad[
+                    :, 
+                    self.y_pad: self.y_pad + self.img_h, 
+                    self.x_pad: self.x_pad + self.img_w]
+            uv_map_list.append(uv_map)
+        uv_map_arr = np.stack(uv_map_list)
+        VideoIO.write_video_TCHW(save_path, uv_map_arr)
+    
+    def convert(self):
+        pkl_list = glob.glob(str(Path(self.iuv_pkl_base, '**', '*.pkl')), recursive=True)
+        for pkl_path in tqdm(pkl_list):
+            uv_vid_path = ChaPath(pkl_path).change_base(self.uv_vid_base)
+            uv_vid_path = Path(uv_vid_path.parent, uv_vid_path.stem + '.avi')
+
+            uv_vid_path.parent.mkdir(parents=True, exist_ok=True)
+            self.save_uv(pkl_path, uv_vid_path)
+
 
 # matplotlib.use('TkAgg')
 # plt.imshow(video[10])
 # plt.show()
 if __name__ == '__main__':
-    ConvertVideoToIUV().convert()
+    # ConvertVideoToIUVPkl().convert()
+    ConvertIuvPklToUvVideo().convert()

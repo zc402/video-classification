@@ -14,11 +14,11 @@ cfg = get_override_cfg()
 densepose = Path(cfg.DENSEPOSE).absolute()
 sys.path.append(str(densepose))
 
-dumpfile = '/media/zc/ST16/ChaLearnIsoAll/4_IUV_New/valid/029/M_05604.pkl'
+dumpfile = '/media/zc/ST16/ChaLearnIsoAll/4_IUV_New/valid/017/M_03216.pkl'
 with open(dumpfile, 'rb') as f:
     results = pickle.load(f)
 
-video = VideoIO.read_video_rgb('/media/zc/C2000Pro-1TB/ChaLearnIsoAllClass/1_Sample/valid/029/M_05604.avi')
+video = VideoIO.read_video('/media/zc/C2000Pro-1TB/ChaLearnIsoAllClass/1_Sample/valid/017/M_03216.avi', format='rgb24')
 
 plt.ion()
 fig, ax = plt.subplots(1)
@@ -30,7 +30,9 @@ for frame, result in zip(video, results):
     # print(result)
     box = result['pred_boxes_XYXY']
     # labels = result['pred_densepose'][0].labels
-
+    if len(box) == 0:
+        print('No detection')
+        continue
     x1, y1, x2, y2 = box[0].cpu().numpy()
     x1, x2 = x1 - 160, x2 - 160
     y1, y2 = y1 - 120, y2 - 120
