@@ -100,7 +100,7 @@ class VideoIO:
     def read_video(filename: Path, format):
         assert format in ['gray', 'rgb24']
         frame_list = []
-        with av.open(filename) as container:
+        with av.open(filename.as_posix()) as container:
             for frame in container.decode(video=0):
                 frame_list.append(frame.to_ndarray(format=format))
 
@@ -210,10 +210,6 @@ class ConvertVideoToIUVPkl:
                 avi,
                 iuv_pkl_path.as_posix())
 
-from config.defaults import get_override_cfg
-cfg = get_override_cfg()
-densepose = Path(cfg.DENSEPOSE).absolute()
-sys.path.append(str(densepose))
 
 class ConvertIuvPklToUvVideo:
     """
@@ -228,12 +224,19 @@ class ConvertIuvPklToUvVideo:
         
         self.img_h = 240
         self.img_w = 320
+
+        self.img_pad_h = 240*2
+        self.img_pad_w = 320*2
         
 
         from config.defaults import get_override_cfg
         cfg = get_override_cfg()
+        densepose = Path(cfg.DENSEPOSE).absolute()
+        sys.path.append(str(densepose))
         
-        self.iuv_pkl_base = Path(cfg.CHALEARN.ROOT, self.iuv_base)
+        self.iuv_pkl_folder = Path(cfg.CHALEARN.ROOT, self.iuv_base)
+        self.pkl_list = glob.glob(str(Path(self.iuv_pkl_folder, '**', '*.pkl')), recursive=True)
+
     
     def save_uv(self, iuv_pkl: Path, save_path:Path):
         with open(iuv_pkl, 'rb') as f:
@@ -241,19 +244,13 @@ class ConvertIuvPklToUvVideo:
 
         uv_map_list = []  # [T][CHW]
         for result in results:  # one result is one frame
-            bg_pad = np.zeros((2, self.img_h*2, self.img_w*2), np.uint8)  # CHW
+            bg_pad = np.zeros((2, self.img_pad_h, self.img_pad_w), np.uint8)  # CHW
             box = result['pred_boxes_XYXY']
             if len(box) == 0:
                 # No detection
                 print('No detection')
             else:
                 x1, y1, x2, y2 = box[0].cpu().numpy().astype(int)
-                # x1, x2 = x1 - self.x_pad, x2 - self.x_pad
-                # y1, y2 = y1 - self.y_pad, y2 - self.y_pad
-                # x1 = max(x1, 0)
-                # y1 = max(y1, 0)
-                # x2 = min(x2, self.img_w)
-                # y2 = min(y2, self.img_h)
                 
                 densepose = result['pred_densepose'][0].uv  # CHW
                 densepose = densepose.cpu().numpy()
@@ -263,27 +260,244 @@ class ConvertIuvPklToUvVideo:
                 map_h, map_w = densepose.shape[1:]
                 bg_pad[:, y1:y1+map_h, x1:x1+map_w] = densepose
 
-                uv_map = bg_pad[
-                    :, 
-                    self.y_pad: self.y_pad + self.img_h, 
-                    self.x_pad: self.x_pad + self.img_w]
+            uv_map = bg_pad[  # Global pad to global un-pad
+                :, 
+                self.y_pad: self.y_pad + self.img_h, 
+                self.x_pad: self.x_pad + self.img_w]
+
             uv_map_list.append(uv_map)
         uv_map_arr = np.stack(uv_map_list)
         VideoIO.write_video_TCHW(save_path, uv_map_arr)
+
+    def save_by_pkl(self, pkl_path):
+        uv_vid_path = ChaPath(pkl_path).change_base(self.uv_vid_base)
+        uv_vid_path = Path(uv_vid_path.parent, uv_vid_path.stem + '.avi')
+        if ChaPath(uv_vid_path).prepend('0_').exists():
+            return
+
+        uv_vid_path.parent.mkdir(parents=True, exist_ok=True)
+        self.save_uv(pkl_path, uv_vid_path)
     
     def convert(self):
-        pkl_list = glob.glob(str(Path(self.iuv_pkl_base, '**', '*.pkl')), recursive=True)
+        for pkl_path in tqdm(self.pkl_list):
+            self.save_by_pkl(pkl_path)
+    
+    def convert_multithread(self):
+        # Multi thread with tqdm shown
+        # Performance dropped due to random access into machanical hard drive.
+        pkl_list = self.pkl_list
+        save_by_pkl = self.save_by_pkl
+        from torch.utils.data import Dataset, DataLoader
+        class MTDataset(Dataset):
+            def __len__(self):
+                return len(pkl_list)
+
+            def __getitem__(self, index) -> None:
+                save_by_pkl(pkl_list[index])
+                return None
+
+        dataset = MTDataset()
+        loader = DataLoader(dataset, batch_size=100, num_workers=10, collate_fn=lambda x:x, drop_last=False)
+        [_ for _ in tqdm(loader)]
+
+import cv2
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+class ConvertIuvPklToPartBox:
+    """
+    Extract boxes for parts from Iuv .pkl file
+    """
+    def __init__(self) -> None:
+        self.iuv_base = '4_IUV_New'
+
+        self.y_pad = 120  # y-pad-left
+        self.x_pad = 160  # x-pad-left
+        
+        self.img_h = 240
+        self.img_w = 320
+        
+        self.num_parts = 25  # 0~24, 0 is background
+        from config.defaults import get_override_cfg
+        cfg = get_override_cfg()
+
+        self.box_base = '6_Box'
+        self.video_base = cfg.CHALEARN.SAMPLE
+
+        densepose = Path(cfg.DENSEPOSE).absolute()
+        sys.path.append(str(densepose))
+
+        self.iuv_pkl_folder = Path(cfg.CHALEARN.ROOT, self.iuv_base)
+
+    def get_box_from_part(self, label_map:np.ndarray, part_idx):
+        """
+        Return the BODY LOCAL coordinate of the biggest bounding box of a part (index of surface)
+        Format: XYXY
+        """
+
+        part_mask = (label_map == part_idx).astype(np.uint8)
+        contours, _ = cv2.findContours(part_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours)==0:
+            # Part not detected
+            return None
+
+        # Find biggest countour
+        area = []
+        xywh = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            area.append(w*h)
+            xywh.append((x,y,w,h))
+        amax = np.array(area).argmax()
+        largest_xywh = xywh[amax]
+        x,y,w,h = largest_xywh
+        if w < 15 or h < 15:
+            return None  # Discard abnormally small parts (probably detected wrongly)
+        
+        return (x, y, x+w, y+h)
+
+    def save_box(self, iuv_pkl:Path, box_path:Path):
+        with open(iuv_pkl, 'rb') as f:
+            results = pickle.load(f)
+        
+        box_list = []  # [T][Box, xyxy]
+        for result in results:
+            box_part = [None for _ in range(self.num_parts)]
+            human_box = result['pred_boxes_XYXY']
+            if len(human_box) == 0:
+                # No detection
+                pass
+                # print('No detection')
+            else:
+                hx1, hy1, hx2, hy2 = human_box[0].cpu().numpy().astype(int)
+                labels = result['pred_densepose'][0].labels  # The I in IUV
+                labels = labels.cpu().numpy()
+                for p in range(1, self.num_parts):
+                    xyxy = self.get_box_from_part(labels, p)
+                    if xyxy is not None:
+                        x1, y1, x2, y2 = xyxy
+                        # Body coordinate to global coordinate (original image, no pad)
+                        x1, x2 = np.array([x1, x2]) + hx1 - self.x_pad
+                        y1, y2 = np.array([y1, y2]) + hy1 - self.y_pad
+
+                        xyxy = (x1, y1, x2, y2)
+                    box_part[p] = xyxy
+            box_list.append(box_part)
+
+        with box_path.open('wb') as f:
+            pickle.dump(box_list, f)
+                
+
+    def convert(self):
+        pkl_list = glob.glob(str(Path(self.iuv_pkl_folder, '**', '*.pkl')), recursive=True)
         for pkl_path in tqdm(pkl_list):
-            uv_vid_path = ChaPath(pkl_path).change_base(self.uv_vid_base)
-            uv_vid_path = Path(uv_vid_path.parent, uv_vid_path.stem + '.avi')
+            box_path = ChaPath(pkl_path).change_base(self.box_base)
 
-            uv_vid_path.parent.mkdir(parents=True, exist_ok=True)
-            self.save_uv(pkl_path, uv_vid_path)
+            box_path.parent.mkdir(parents=True, exist_ok=True)
+            self.save_box(pkl_path, box_path)
 
+    def plot(self):
+        pkl_list = glob.glob(str(Path(self.iuv_pkl_folder, '**', '*.pkl')), recursive=True)
+        pkl = pkl_list[10]
+        box_path = ChaPath(pkl).change_base(self.box_base)
+        video_path = ChaPath(pkl).change_base(self.video_base)
+        video_path = video_path.parent / (video_path.stem + '.avi')
+
+        video = VideoIO.read_video(video_path, format='rgb24')
+        with open(box_path, 'rb') as f:
+            boxes_T = pickle.load(f)
+
+        plt.ion()
+        fig, ax = plt.subplots(1)
+        ax.xaxis.tick_top()
+        ax.yaxis.tick_left() 
+        for frame, boxes in zip(video, boxes_T):
+
+            ax.imshow(frame)
+            for box in boxes:
+                if box is None:
+                    continue
+                x1, y1, x2, y2 = box
+                rect = patches.Rectangle((x1, y1), x2-x1, y2-y1, linewidth=2,
+                            edgecolor='r', facecolor="none")
+                ax.add_patch(rect)
+
+            plt.draw()
+            plt.pause(0.1)
+            plt.gca().cla()
+
+
+class PartBoxComposition:
+
+    # Individual parts (surface composition)
+
+    lHand = [4]
+    rHand = [3]
+
+    lUpArm = [15, 17]
+    rUpArm = [16, 18]
+
+    lLoArm = [19, 21]  # Left lower arm
+    rLoArm = [20, 22]
+
+    torso = [1, 2]
+    head = [23, 24]
+
+    # Part compositions
+
+    lArm = lUpArm + lLoArm
+    rArm = rUpArm + rLoArm
+
+    TorsoArmHand = torso + lArm + rArm + lHand + rHand
+
+    lHandLoArm = lHand + lLoArm
+    lHandArm = lHand + lArm
+    lHandArmTorso = lHand + lArm + torso
+
+    rHandLoArm = rHand + rLoArm
+    rHandArm = rHand + rArm
+    rHandArmTorso = rHand + rArm + torso
+
+    def combine_box_xyxy(self, box_arr:np.ndarray):
+        """
+        Args:
+            box_arr: shape (N,4)
+        """
+        x1 = box_arr[:, 0]
+        y1 = box_arr[:, 1]
+        x2 = box_arr[:, 2]
+        y2 = box_arr[:, 3]
+
+        x1_min = min(x1)
+        x2_min = min(x2)
+        y1_max = max(y1)
+        y2_max = max(y2)
+        large_box = (x1_min, y1_max, x2_min, y2_max)
+        return large_box
+
+    def combine_spatial_box_xyxy(self, part_boxes, part_list):
+        """
+        Args:
+            part_boxes: list of boxes, shape [P][4]
+            part_list: list of combined parts, shape [P]
+        """
+        boxes = [part_boxes[p] for p in part_list]
+        boxes = [b for b in boxes if b is not None]
+        if len(boxes) == 0:
+            return None
+        else:
+            box_arr = np.array(boxes)  # P, 4
+            large_box = self.combine_box_xyxy(box_arr)
+            return large_box
+
+    def __init__(self) -> None:
+        pass
 
 # matplotlib.use('TkAgg')
 # plt.imshow(video[10])
 # plt.show()
 if __name__ == '__main__':
+    # ConvertVideoToFlow().convert()
     # ConvertVideoToIUVPkl().convert()
-    ConvertIuvPklToUvVideo().convert()
+    # ConvertIuvPklToUvVideo().convert()
+    # ConvertIuvPklToPartBox().convert()
+    ConvertIuvPklToPartBox().plot()

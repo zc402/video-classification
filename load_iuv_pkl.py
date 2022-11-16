@@ -14,11 +14,11 @@ cfg = get_override_cfg()
 densepose = Path(cfg.DENSEPOSE).absolute()
 sys.path.append(str(densepose))
 
-dumpfile = '/media/zc/ST16/ChaLearnIsoAll/4_IUV_New/valid/017/M_03216.pkl'
+dumpfile = '/media/zc/ST16/ChaLearnIsoAll/4_IUV_New/test/026/M_05125.pkl'
 with open(dumpfile, 'rb') as f:
     results = pickle.load(f)
 
-video = VideoIO.read_video('/media/zc/C2000Pro-1TB/ChaLearnIsoAllClass/1_Sample/valid/017/M_03216.avi', format='rgb24')
+video = VideoIO.read_video('/media/zc/C2000Pro-1TB/ChaLearnIsoAllClass/1_Sample/test/026/M_05125.avi', format='rgb24')
 
 plt.ion()
 fig, ax = plt.subplots(1)
