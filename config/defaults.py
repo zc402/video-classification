@@ -24,8 +24,14 @@ _C.CHALEARN.CSE = '4_CSE'
 _C.CHALEARN.CROP_BODY = 'CropBody'  # Crop body part
 _C.CHALEARN.CLIP_LEN = 4  # Clip duration, Res3d
 _C.CHALEARN.FLOW = '2_Flow'  # Optical flow, saved as RGB images
-_C.CHALEARN.FLOW_NPY = '2_Flow_npy'
+_C.CHALEARN.FLOW_NPY = '2_Flow_npy'  # Flow saved as npy file, deprecated due to large size
 _C.CHALEARN.IMG_ENERGY = '2_Images_energy'  # Image with enough flow energy
+
+_C.CHALEARN.FLOW_VIDEO = '2_Flow_New'
+_C.CHALEARN.IUV_NEW = '4_IUV_New'  # New IUV folder, each video has its own IUV file
+_C.CHALEARN.UV_VIDEO = '5_UV_Video'
+_C.CHALEARN.BOX = '6_Box'
+
 
 _C.DENSEPOSE = './detectron2/projects/DensePose'
 
