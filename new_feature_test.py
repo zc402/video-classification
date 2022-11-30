@@ -512,10 +512,10 @@ class PartBoxComposition:
         y2 = box_arr[:, 3]
 
         x1_min = min(x1)
-        x2_min = min(x2)
-        y1_max = max(y1)
+        y1_min = min(y1)
+        x2_max = max(x2)
         y2_max = max(y2)
-        large_box = (x1_min, y1_max, x2_min, y2_max)
+        large_box = (x1_min, y1_min, x2_max, y2_max)
         return large_box
 
     def combine_spatial_box_xyxy(self, part_boxes, part_list):
@@ -555,7 +555,7 @@ import random
 
 class ChalearnGestureDataset(Dataset):
 
-    def __init__(self, cfg, name_of_set:str, parts:List, sampling:str) -> None:
+    def __init__(self, cfg, name_of_set:str, parts:List, sampling:str, do_augment:bool=False) -> None:
         """
         Args
             cfg: config node
@@ -575,12 +575,45 @@ class ChalearnGestureDataset(Dataset):
         self.box_base = cfg.CHALEARN.BOX
         self.flow_base = cfg.CHALEARN.FLOW_VIDEO
         self.uv_base = cfg.CHALEARN.UV_VIDEO
+        self.input_size = cfg.MODEL.INPUT_SIZE
 
         self.sampling = sampling
+        self.do_augment = do_augment  # Optional augment: crop&pad
         self.compose = PartBoxComposition()
+
+        self.trans_resize = torchvision.transforms.Resize(size=(self.input_size, self.input_size))
+        self.trans_crop = torchvision.transforms.RandomCrop(size=self.input_size, padding=self.input_size // 10)
     
     def __len__(self):
         return len(self.label_list)
+
+    def _preprocess(self, tensors:List[torch.Tensor]):
+        """
+        Args:
+            tensors: List of tensors shape [NCHW]
+        """
+        num_cs = [x.size()[1] for x in tensors]
+        num_cs_cum = np.cumsum(num_cs)
+
+        # Concat into C channel and do augmentations
+        X = torch.concat(tensors, dim=1)  # NCHW
+
+        # Normalize
+        X = X.to(dtype=torch.get_default_dtype()).div(255)  # 0~1
+        
+        # TODO: resize but keep ratio?
+        # Resize
+        X = self.trans_resize(X)
+
+        # Optional Augment (crop&pad, color jitter)
+        if self.do_augment == True:
+            X = self.trans_crop(X)
+            pass
+
+        # Split from C channel
+        Y = torch.tensor_split(X, num_cs_cum.tolist()[:-1], dim=1)
+        return Y
+
 
     def _features_from_indices(self, clip_indices, boxes, rgb_path, label):
         """
@@ -593,15 +626,35 @@ class ChalearnGestureDataset(Dataset):
         uv_path = ChaPath(rgb_path).change_base(self.uv_base)
 
         boxes_clip = boxes[clip_indices, :]  # (T, P, 4 or None)  time indices
-        # boxes_clip = boxes_clip[:, self.parts]  # (T, P, 4)  part indices
 
         box = self.compose.combine_temporal_box_xyxy(boxes_clip, self.parts)  # (4)
-        modals = [rgb_path, flow_path, uv_path]
+        x1, y1, x2, y2 = box
         
+        # Load video, temporal clip
         flow_clip = VideoIO.read_video_TCHW(flow_path, 2, clip_indices)
         uv_clip = VideoIO.read_video_TCHW(uv_path, 2, clip_indices)
         rgb_clip = VideoIO.read_video_TCHW(rgb_path, 0, clip_indices, format='rgb24')
+
+        # Crop part
+        flow_crop, uv_crop, rgb_crop = [x[:, :, y1:y2, x1:x2] for x in [flow_clip, uv_clip, rgb_clip]]
+
+        # Show the cropped figure
+        # matplotlib.use('TkAgg')
+        # img = rgb_crop[0].numpy().transpose((1, 2, 0))
+        # plt.imshow(img)
+
+        # Augment (resize, normalizations, crop(optional))
         
+        rgb_crop, flow_crop, uv_crop = self._preprocess([rgb_crop, flow_crop, uv_crop])
+
+        matplotlib.use('TkAgg')
+        img = rgb_crop[0].numpy().transpose((1, 2, 0))
+        plt.imshow(img)
+        plt.show()
+
+        
+
+        return {}
         pass
 
     def _random_sampling(self, seq_len, clip_len):

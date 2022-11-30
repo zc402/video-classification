@@ -43,6 +43,7 @@ _C.MODEL.R3D_INPUT = 'CropHTAH'  # Input for c3d model
 _C.MODEL.LR = 1e-3
 _C.MODEL.FUSE = True  
 _C.MODEL.MAX_EPOCH = 100
+_C.MODEL.INPUT_SIZE = 192
 
 _C.NUM_CPU = 18
 
