@@ -467,7 +467,7 @@ class ConvertIuvPklToPartBox:
             
 
 
-class PartBoxComposition:
+class PartCompose:
 
     # Individual parts (surface composition)
 
@@ -579,7 +579,7 @@ class ChalearnGestureDataset(Dataset):
 
         self.sampling = sampling
         self.do_augment = do_augment  # Optional augment: crop&pad
-        self.compose = PartBoxComposition()
+        self.compose = PartCompose()
 
         self.trans_resize = torchvision.transforms.Resize(size=(self.input_size, self.input_size))
         self.trans_crop = torchvision.transforms.RandomCrop(size=self.input_size, padding=self.input_size // 10)
@@ -590,13 +590,13 @@ class ChalearnGestureDataset(Dataset):
     def _preprocess(self, tensors:List[torch.Tensor]):
         """
         Args:
-            tensors: List of tensors shape [NCHW]
+            tensors: List of tensors shape [TCHW]
         """
         num_cs = [x.size()[1] for x in tensors]
         num_cs_cum = np.cumsum(num_cs)
 
         # Concat into C channel and do augmentations
-        X = torch.concat(tensors, dim=1)  # NCHW
+        X = torch.concat(tensors, dim=1)  # TCHW
 
         # Normalize
         X = X.to(dtype=torch.get_default_dtype()).div(255)  # 0~1
@@ -614,6 +614,13 @@ class ChalearnGestureDataset(Dataset):
         Y = torch.tensor_split(X, num_cs_cum.tolist()[:-1], dim=1)
         return Y
 
+    @staticmethod
+    def _debug_show_img(x):
+        # x shape: (T,C,H,W)
+        matplotlib.use('TkAgg')
+        img = x[0].numpy().transpose((1, 2, 0))
+        plt.imshow(img)
+        plt.show()
 
     def _features_from_indices(self, clip_indices, boxes, rgb_path, label):
         """
@@ -629,33 +636,29 @@ class ChalearnGestureDataset(Dataset):
 
         box = self.compose.combine_temporal_box_xyxy(boxes_clip, self.parts)  # (4)
         x1, y1, x2, y2 = box
+        x1 = max(0, x1)
+        y1 = max(0, y1)
         
         # Load video, temporal clip
         flow_clip = VideoIO.read_video_TCHW(flow_path, 2, clip_indices)
         uv_clip = VideoIO.read_video_TCHW(uv_path, 2, clip_indices)
         rgb_clip = VideoIO.read_video_TCHW(rgb_path, 0, clip_indices, format='rgb24')
 
-        # Crop part
+        # Crop part area from image
         flow_crop, uv_crop, rgb_crop = [x[:, :, y1:y2, x1:x2] for x in [flow_clip, uv_clip, rgb_clip]]
 
-        # Show the cropped figure
-        # matplotlib.use('TkAgg')
-        # img = rgb_crop[0].numpy().transpose((1, 2, 0))
-        # plt.imshow(img)
-
         # Augment (resize, normalizations, crop(optional))
-        
         rgb_crop, flow_crop, uv_crop = self._preprocess([rgb_crop, flow_crop, uv_crop])
 
-        matplotlib.use('TkAgg')
-        img = rgb_crop[0].numpy().transpose((1, 2, 0))
-        plt.imshow(img)
-        plt.show()
+        out_dict = {
+            'label': label - 1,
+            'rgb': rgb_crop,  # TCHW
+            'uv': uv_crop,
+            'flow': flow_crop
 
-        
+        }
 
-        return {}
-        pass
+        return out_dict
 
     def _random_sampling(self, seq_len, clip_len):
         possible_start_idx = seq_len - clip_len
@@ -671,7 +674,7 @@ class ChalearnGestureDataset(Dataset):
             clips.append(self._random_sampling(seq_len, clip_len))
         else:
             t = 0
-            for t in range(0, seq_len - clip_len, 4):
+            for t in range(0, seq_len - clip_len, clip_len):
                 clip_indices = range(t, t + clip_len)
                 clips.append(clip_indices)
         return clips
@@ -689,7 +692,7 @@ class ChalearnGestureDataset(Dataset):
 
         # Random / Uniform sampling
         # Random sampling
-        seq_len = len(boxes)
+        seq_len = len(boxes) - 1  # Should use seq_len, not -1, but the video reader returns OUT_OF_BOUND
         if self.sampling == 'random':
             # Random sampling, take 1
             clip_indices = self._random_sampling(seq_len, self.clip_len)
@@ -705,9 +708,277 @@ class ChalearnGestureDataset(Dataset):
                 collected_feature_list.append(collected_feature)
             return collected_feature_list
 
-# matplotlib.use('TkAgg')
-# plt.imshow(video[10])
-# plt.show()
+
+from model.my_slowfast import init_my_slowfast
+class ModelManager():
+    def __init__(self, cfg) -> None:
+        self.model = init_my_slowfast(cfg, (5, 2), (64, 8))
+        self.model = self._load_pretrain(self.model)
+        self.ckpt_dir = Path(cfg.CHALEARN.ROOT, cfg.MODEL.LOGS, cfg.MODEL.CKPT_DIR, cfg.MODEL.NAME)
+        self.debug = cfg.DEBUG
+
+    def _load_pretrain(self, model):
+        
+        pretrained = torch.load(Path('pretrained', 'SLOWFAST_8x8_R50.pyth'))
+        state_dict = pretrained["model_state"]
+
+        state_dict = self._delete_mismatch(state_dict)
+
+        model.load_state_dict(state_dict, strict=False)
+        model.cuda()
+        return model
+    
+    def prepare_data(self, batch:dict):
+        # batch shape: NTCHW
+
+        # NTCHW -> NCTHW
+        x = [torch.permute(x, [0, 2, 1, 3, 4]).cuda() for x in (batch['rgb'], batch['uv'], batch['flow'])]
+        x = [torch.cat([x[0], x[1]], dim=1), x[2]]
+        y_true = batch['label'].cuda()
+
+        return x, y_true
+    
+    def _delete_mismatch(self, state_dict):
+        layers = [
+            'blocks.0.multipathway_blocks.0.conv.weight',
+            'blocks.0.multipathway_blocks.1.conv.weight',
+            'blocks.6.proj.weight',
+            'blocks.6.proj.bias',
+
+            'blocks.1.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.1.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.2.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.2.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.3.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.3.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+            'blocks.4.multipathway_blocks.0.res_blocks.0.branch1_conv.weight',
+            'blocks.4.multipathway_blocks.0.res_blocks.0.branch2.conv_a.weight',
+        ]
+        for key in layers:
+            del state_dict[key]
+        return state_dict
+
+    def save_ckpt(self, epoch=0, acc=0.0):
+        self.ckpt_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_name = 'acc%.3f_e%d.ckpt' % (acc, epoch)
+        # ckpt_name = f'acc{round(acc, 2)}_e{epoch}.ckpt'
+        ckpt_path = Path(self.ckpt_dir, ckpt_name)
+        
+        if not self.debug:
+            torch.save(self.model.state_dict(), ckpt_path)
+            print(f"Checkpoint saved in {str(ckpt_path)}")
+        else:
+            print(f'Ignore checkpoint saving under debug mode. {str(ckpt_path)}')
+        
+
+    def load_ckpt(self):
+        ckpt_list = sorted(glob.glob(str(self.ckpt_dir / '*.ckpt')))
+        if len(ckpt_list) == 0:
+            print('warning: no checkpoint found, try with HTAH ckeckpoint')
+            # Use HTAH checkpoint:
+            ckpt_list = sorted(glob.glob(str(Path(self.ckpt_dir.parent, 'slowfast-HTAH', '*.ckpt'))))
+            if len(ckpt_list) == 0:
+                print('warning: no HTAH checkpoint found')
+                return
+        ckpt = ckpt_list[-1]
+        print(f'loading checkpoint from {str(ckpt)}')
+        
+        state_dict = torch.load(ckpt)
+        # self.mm.delete_mismatch(state_dict)
+        self.model.load_state_dict(state_dict, strict=True)
+
+        pass
+
+from torch import optim
+from torch.nn import CrossEntropyLoss
+from torch.utils.data.dataloader import default_collate
+
+class Trainer():
+
+    def __init__(self, cfg):
+        self.debug = cfg.DEBUG
+
+        if self.debug == True:
+            self.num_workers = 0
+            self.save_debug_img = True
+            
+        elif self.debug == False:
+            self.num_workers = min(cfg.NUM_CPU, 10)
+            self.save_debug_img = False
+        
+        self.cfg = cfg
+        self.batch_size = cfg.CHALEARN.BATCH_SIZE
+
+        self.parts = PartCompose.lHandArmTorso
+            
+        self.train_dataset = ChalearnGestureDataset(cfg, 'train', self.parts, 'random', do_augment=False)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=self.num_workers)
+
+        # self.valid_dataset = ChalearnVideoDataset(cfg, 'valid')
+        # self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=True, num_workers=self.num_workers)
+
+        self.test_dataset = ChalearnGestureDataset(cfg, 'test', self.parts, 'uniform', do_augment=False)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=cfg.CHALEARN.BATCH_SIZE, shuffle=False, drop_last=False, num_workers=self.num_workers, collate_fn=lambda x:x)
+
+        self.mm = ModelManager(cfg)
+
+        self.loss = CrossEntropyLoss()
+        
+        self.num_step = 0
+        self.max_historical_acc = 0.
+
+        self.mm.load_ckpt()
+
+        self.optim = optim.SGD(self.mm.model.parameters(), lr=cfg.MODEL.LR, momentum=0.9)
+
+    def _train_epoch(self):
+
+        loss_list = []
+        correct_list = []
+        for batch in tqdm(self.train_loader):
+            # batch: dict of NTCHW, except for labels
+            
+            x, y_true = self.mm.prepare_data(batch)  # x: list of N,T,C,H,W
+
+            self.mm.model.train()
+            y_pred = self.mm.model(x)
+
+            loss_tensor = self.loss(y_pred, y_true)
+            self.optim.zero_grad()
+            loss_tensor.backward()
+            self.optim.step()
+
+            # if self.num_step % 100 == 0:
+            #     print(f'Step {self.num_step}, loss: {round(loss_tensor.item(), 3)}')
+            self.num_step = self.num_step + 1 
+            loss_list.append(loss_tensor.item())
+
+            # Compute train correctness
+            with torch.no_grad():
+                y_pred = torch.argmax(y_pred, dim=-1)
+                correct = y_pred == y_true
+                correct_list.append(correct)
+            
+            if self.debug:
+                break
+
+        loss_avg = np.array(loss_list).mean()
+        print(f'loss_avg: {round(loss_avg, 3)}')
+
+        c = torch.concat(correct_list, dim=0)
+        accuracy = c.sum() / len(c)
+        print(f'Train Accuracy: {round(accuracy.item(), 3)}. ({c.sum().item()} / {len(c)})')
+        
+    
+    def train(self):
+        
+        max_epoch = self.cfg.MODEL.MAX_EPOCH
+
+        for epoch in range(max_epoch):
+            print(f'========== Training epoch {epoch}')
+            self.num_step = 0
+            self._train_epoch()
+            
+            if (epoch) % 1 == 0:
+                y = self.run_eval()
+
+                acc = y['acc']
+                if acc > self.max_historical_acc:
+                    self.max_historical_acc = acc
+                    self.mm.save_ckpt(epoch, acc)
+                else:
+                    print(f"Not saved. Current best acc: %.3f" % (self.max_historical_acc))
+                    
+        
+        self.mm.save_ckpt(epoch, acc)
+
+    # Run dataloader with eval model
+    def run_eval(self, dataset_loader: torch.utils.data.DataLoader=None,):
+
+        prepare_data = self.mm.prepare_data
+        model = self.mm.model
+        if dataset_loader is None:
+            dataset_loader = self.test_loader
+
+        pred_score_list = []  # List of (N, class_score)
+        true_list = []  # List of (N,)
+
+        batch_collect = []  # Collect a batch
+        samples_per_video = []  # [7, 5, 10, ...]
+
+        def test_batch(collect):
+            
+            x, y_true = prepare_data(collect)
+
+            with torch.no_grad():
+                model.eval()
+                y_pred = model(x)  # N,class_score
+            
+            y_pred = y_pred.cpu().numpy()
+            y_true = y_true.cpu().numpy()
+
+            pred_score_list.append(y_pred)
+            true_list.append(y_true)
+        
+        for step, batch in enumerate(tqdm(dataset_loader)):  # LNTCHW, N=1, L for list generated from dataset
+            # batch: [[TCHW]]
+            # How many samples are uniformly generated from the same video. These are aggregated later through majority voting
+            [samples_per_video.append(len(b)) for b in batch]  # b: N,TCHW, N is length of a video - clip_len
+            [batch_collect.extend(b) for b in batch]  # batch_collect: N,TCHW
+            if len(batch_collect) < self.batch_size:
+                continue
+            
+            while len(batch_collect) > self.batch_size:
+                # Batch size reached. Run a batch from batch_collect
+                batch_full = default_collate(batch_collect[:self.batch_size])
+                batch_collect = batch_collect[self.batch_size:]
+                
+                test_batch(batch_full)
+            
+            if self.debug == True and step > 5:
+                break
+        
+        # Last batch
+        if len(batch_collect) > 0:
+            batch_collect = default_collate(batch_collect)
+            test_batch(batch_collect)
+
+        pred_score_arr = np.concatenate(pred_score_list, axis=0)  # (N, class_score)
+        pred_score_arr = np.exp(pred_score_arr) / np.sum(np.exp(pred_score_arr), axis=1, keepdims=True)  # (N, class_score)
+        # pred_arr = np.argmax(pred_score_arr, axis=1)  # (N,)
+        true_arr = np.concatenate(true_list, axis=0)  # (N,)
+
+        # Acc 
+
+        correct_list = []
+        read_index = 0
+        for num_samples in samples_per_video:
+            v_begin = read_index
+            v_end = read_index + num_samples
+            read_index = read_index + num_samples
+            preds = pred_score_arr[v_begin: v_end]  # (N, class_score)
+            preds = np.mean(preds, axis=0)  # Mean over N 
+            trues = true_arr[v_begin: v_end]
+            assert np.all(trues == trues[0])
+
+            # most_pred = np.bincount(preds).argmax()
+            pred_1 = np.argmax(preds, axis=0)
+            true = trues[0]
+            is_correct = (pred_1 == true)
+
+            correct_list.append(is_correct)
+            
+        c = np.array(correct_list)
+        accuracy = c.sum() / len(c)
+        print(f'Test Accuracy: {round(accuracy, 3)}. ({c.sum()} / {len(c)})')
+        return {
+            'ps':pred_score_arr,
+            't': true_arr,
+            'acc': accuracy,
+            'sv': samples_per_video,
+        }
+
+
 if __name__ == '__main__':
 
     from config.defaults import get_override_cfg
@@ -717,5 +988,6 @@ if __name__ == '__main__':
     # ConvertIuvPklToUvVideo(_cfg).convert()
     # ConvertIuvPklToPartBox(_cfg).convert()
     # ConvertIuvPklToPartBox(_cfg).plot()
-    dataset = ChalearnGestureDataset(_cfg, 'train', PartBoxComposition.TorsoArmHand, 'random')
-    dataset[5]
+    # dataset = ChalearnGestureDataset(_cfg, 'train', PartCompose.TorsoArmHand, 'random')
+    # dataset[5]
+    Trainer(_cfg).train()
